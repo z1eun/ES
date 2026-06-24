@@ -10,7 +10,7 @@ interface SafetyExamProps {
 
 export default function SafetyExam({ userName, setUserName, stampsCount }: SafetyExamProps) {
   const [examTask, setExamTask] = useState<SafetyTaskType>("escalator_line");
-  const [useWebcam, setUseWebcam] = useState<boolean>(false);
+  const [useWebcam, setUseWebcam] = useState<boolean>(true);
   const [webcamStatus, setWebcamStatus] = useState<"idle" | "requesting" | "active" | "error">("idle");
   const [analyzing, setAnalyzing] = useState<boolean>(false);
   const [analysisResult, setAnalysisResult] = useState<{
@@ -97,11 +97,7 @@ export default function SafetyExam({ userName, setUserName, stampsCount }: Safet
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       if (useWebcam && webcamStatus === "active" && video) {
-        ctx.save();
-        ctx.translate(canvas.width, 0);
-        ctx.scale(-1, 1);
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        ctx.restore();
 
         drawExamGuidelines(ctx, canvas.width, canvas.height);
       } else {
@@ -486,7 +482,7 @@ export default function SafetyExam({ userName, setUserName, stampsCount }: Safet
                 ref={canvasRef}
                 width={640}
                 height={480}
-                className="w-full h-full block object-cover scale-x-[-1]"
+                className="w-full h-full block object-cover"
               />
 
               {useWebcam && webcamStatus === "requesting" && (

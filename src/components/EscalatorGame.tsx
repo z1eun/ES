@@ -10,7 +10,7 @@ interface EscalatorGameProps {
 
 export default function EscalatorGame({ onAddStamp, stamps }: EscalatorGameProps) {
   const [gameMode, setGameMode] = useState<"line" | "handrail">("line");
-  const [useWebcam, setUseWebcam] = useState<boolean>(false);
+  const [useWebcam, setUseWebcam] = useState<boolean>(true);
   const [webcamStatus, setWebcamStatus] = useState<"idle" | "requesting" | "active" | "error">("idle");
   const [gameState, setGameState] = useState<"ready" | "playing" | "failed" | "passed">("ready");
   
@@ -19,6 +19,14 @@ export default function EscalatorGame({ onAddStamp, stamps }: EscalatorGameProps
   const [gripProgress, setGripProgress] = useState<number>(0);
   const [gameMessage, setGameMessage] = useState<string>("초록 버튼을 누르면 시작해요! 준비 완료! 💛");
   const [warningActive, setWarningActive] = useState<boolean>(false);
+
+  // 3-second countdown before game starts
+  const [startTimer, setStartTimer] = useState<number | null>(null);
+
+  // Character Simulator States & Interactive coordinates for dragging
+  const [charPos, setCharPos] = useState({ x: 240, y: 355 });
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const isDraggingRef = useRef<boolean>(false);
 
   // Character Simulator States (Alternative if webcam not available)
   const [simFeetInCorrectArea, setSimFeetInCorrectArea] = useState<boolean>(true);
@@ -137,12 +145,36 @@ export default function EscalatorGame({ onAddStamp, stamps }: EscalatorGameProps
     setWebcamStatus("idle");
   };
 
+  // pre-game 3-second countdown before training starts
+  useEffect(() => {
+    if (startTimer === null) return;
+    if (startTimer === 0) {
+      setStartTimer(null);
+      setGameState("playing");
+      setCountdown(10);
+      setGripProgress(0);
+      setWarningActive(false);
+      if (gameMode === "line") {
+        setGameMessage("안전구역 한가운데에 바르게 똑똑하게 서기 놀이! 10초 동안 버텨요! 🎈");
+      } else {
+        setGameMessage("기차가 움직여요! 오른쪽 핑크/블루 고무 손잡이를 이쁘게 꼭 잡아요!");
+      }
+      playSound("happy");
+      return;
+    }
+    const t = setTimeout(() => {
+      setStartTimer((prev) => (prev !== null ? prev - 1 : null));
+      playSound("beep");
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [startTimer, gameMode]);
+
   // Gameplay Loops (Countdown timer or grip incrementer)
   useEffect(() => {
     let timer: any = null;
     if (gameState === "playing") {
-      if (gameMode === "line") {
-        timer = setInterval(() => {
+      timer = setInterval(() => {
+        if (gameMode === "line") {
           setCountdown((prev) => {
             if (prev <= 1) {
               clearInterval(timer);
@@ -164,37 +196,36 @@ export default function EscalatorGame({ onAddStamp, stamps }: EscalatorGameProps
             }
             return prev - 1;
           });
-        }, 1000);
-      } else {
-        // Handrail grip gauge builder
-        timer = setInterval(() => {
-          const isHolding = useWebcam ? gripProgress > 15 : simHoldingHandrail;
+        } else {
+          // Handrail mode (always exactly 10 seconds)
+          setCountdown((prev) => {
+            if (prev <= 1) {
+              clearInterval(timer);
+              setGameState("passed");
+              onAddStamp("escalator_handrail", 100);
+              playSound("success");
+              setGameMessage("참 잘했어요! ✊ 손잡이를 꽉 잡고 안전하게 꼭대기까지 올라갔어요! 스탬프 팡팡!");
+              return 0;
+            }
 
-          if (!useWebcam) {
-            if (simHoldingHandrail) {
-              setGripProgress((prev) => {
-                if (prev >= 100) {
-                  clearInterval(timer);
-                  setGameState("passed");
-                  onAddStamp("escalator_handrail", 100);
-                  playSound("success");
-                  setGameMessage("참 잘했어요! ✊ 손잡이를 꽉 잡고 안전하게 꼭대기까지 올라갔어요! 스탬프 팡팡!");
-                  return 100;
-                }
-                return prev + 12.5; // reaches 100% in 8 steps
-              });
+            const isHolding = useWebcam ? gripProgress > 15 : simHoldingHandrail;
+            if (isHolding) {
+              setGripProgress((p) => Math.min(100, p + 10));
+              setWarningActive(false);
             } else {
-              setGripProgress((prev) => Math.max(0, prev - 10));
+              setGripProgress((p) => Math.max(0, p - 10));
               setWarningActive(true);
-              setGameMessage("아이쿠! 🖐️ 얼른 손을 꺼내서 둥근 파란 손잡이를 꼭 잡아주세요!");
+              setGameMessage("아이쿠! 🖐️ 얼른 손을 꺼내서 둥근 파란/핑크 손잡이를 꼭 잡아주세요!");
               playSound("beep");
             }
-          }
-        }, 1000);
-      }
+
+            return prev - 1;
+          });
+        }
+      }, 1000);
     }
     return () => clearInterval(timer);
-  }, [gameState, gameMode, useWebcam, simFeetInCorrectArea, simHoldingHandrail]);
+  }, [gameState, gameMode, useWebcam, simFeetInCorrectArea, simHoldingHandrail, gripProgress]);
 
   // Main Canvas Render & Motion Differencing Loop
   useEffect(() => {
@@ -210,11 +241,7 @@ export default function EscalatorGame({ onAddStamp, stamps }: EscalatorGameProps
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       if (useWebcam && webcamStatus === "active" && video) {
-        ctx.save();
-        ctx.translate(canvas.width, 0);
-        ctx.scale(-1, 1);
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        ctx.restore();
 
         const width = canvas.width;
         const height = canvas.height;
@@ -272,11 +299,11 @@ export default function EscalatorGame({ onAddStamp, stamps }: EscalatorGameProps
                     setGameMessage("최고예요! 💖 손잡이를 야무지게 꼭 쥐고 성공 수리에 도달했습니다!");
                     return 100;
                   }
-                  return prev + 1.2;
+                  return prev + 0.15; // Slow down to take exactly ~10 seconds
                 });
                 setWarningActive(false);
               } else {
-                setGripProgress((prev) => Math.max(0, prev - 0.5));
+                setGripProgress((prev) => Math.max(0, prev - 0.2));
                 setWarningActive(true);
               }
             }
@@ -452,8 +479,8 @@ export default function EscalatorGame({ onAddStamp, stamps }: EscalatorGameProps
     }
 
     // 5. Draw Highly Adorable Safety Kid with Bear Ears on Cap
-    const kidX = 240;
-    const kidY = h - 125;
+    const kidX = charPos.x;
+    const kidY = charPos.y;
 
     // Bear Ears on head
     ctx.fillStyle = "#f472b6"; // bright sweet pink ears
@@ -572,25 +599,84 @@ export default function EscalatorGame({ onAddStamp, stamps }: EscalatorGameProps
     ctx.fillText("🧸 아기 지킴이 연습 인형", w - 100, 25);
   };
 
-  const startGame = () => {
-    playSound("happy");
-    setGameState("playing");
-    setCountdown(10);
-    setGripProgress(0);
-    setWarningActive(false);
-
-    if (gameMode === "line") {
-      setGameMessage("안전구역 한가운데에 바르게 똑똑하게 서기 놀이! 10초 동안 버텨요! 🎈");
+  // Drag coordinate & safety helpers for simulated character
+  const getCanvasCoords = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    let clientX = 0;
+    let clientY = 0;
+    if ("touches" in e) {
+      if (e.touches.length === 0) return null;
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
     } else {
-      setGameMessage("기차가 움직여요! 오른쪽 핑크/블루 고무 손잡이를 이쁘게 꼭 잡아요!");
+      clientX = e.clientX;
+      clientY = e.clientY;
+    }
+    const x = ((clientX - rect.left) / rect.width) * canvas.width;
+    const y = ((clientY - rect.top) / rect.height) * canvas.height;
+    return { x, y };
+  };
+
+  const handleCanvasDown = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    if (useWebcam) return;
+    const coords = getCanvasCoords(e);
+    if (!coords) return;
+    
+    // Check if clicked close to the character's head/body (offset centered slightly)
+    const dist = Math.hypot(coords.x - charPos.x, coords.y - (charPos.y - 20));
+    if (dist < 80) {
+      isDraggingRef.current = true;
+      setIsDragging(true);
     }
   };
 
-  const resetGame = () => {
+  const handleCanvasMove = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    if (!isDraggingRef.current) return;
+    const coords = getCanvasCoords(e);
+    if (!coords) return;
+    
+    // Bounds for escalator character: X inside step boundaries, Y within vertical walk bounds
+    const nextX = Math.max(130, Math.min(350, coords.x));
+    const nextY = Math.max(200, Math.min(410, coords.y));
+    setCharPos({ x: nextX, y: nextY });
+  };
+
+  const handleCanvasUp = () => {
+    isDraggingRef.current = false;
+    setIsDragging(false);
+  };
+
+  // Monitor simulated character position and update safety triggers in real-time
+  useEffect(() => {
+    if (useWebcam) return;
+    if (gameMode === "line") {
+      const isSafe = charPos.x > 165 && charPos.x < 315;
+      setSimFeetInCorrectArea(isSafe);
+    } else {
+      const isHolding = charPos.x > 290;
+      setSimHoldingHandrail(isHolding);
+    }
+  }, [charPos, gameMode, useWebcam]);
+
+  const startGame = () => {
+    playSound("happy");
+    setStartTimer(3); // Start with 3-second countdown
     setGameState("ready");
     setCountdown(10);
     setGripProgress(0);
     setWarningActive(false);
+    setCharPos({ x: 240, y: 355 }); // Reset to middle
+  };
+
+  const resetGame = () => {
+    setGameState("ready");
+    setStartTimer(null);
+    setCountdown(10);
+    setGripProgress(0);
+    setWarningActive(false);
+    setCharPos({ x: 240, y: 355 }); // Reset to middle
     setGameMessage("초록 버튼을 누르면 시작해요! 준비 완료! 💛");
   };
 
@@ -664,7 +750,14 @@ export default function EscalatorGame({ onAddStamp, stamps }: EscalatorGameProps
               ref={canvasRef}
               width={640}
               height={480}
-              className="w-full h-full block object-cover scale-x-[-1]"
+              className="w-full h-full block object-cover cursor-grab active:cursor-grabbing"
+              onMouseDown={handleCanvasDown}
+              onMouseMove={handleCanvasMove}
+              onMouseUp={handleCanvasUp}
+              onMouseLeave={handleCanvasUp}
+              onTouchStart={handleCanvasDown}
+              onTouchMove={handleCanvasMove}
+              onTouchEnd={handleCanvasUp}
             />
 
             {/* Warning Flashing Overlay - Adorable alert */}
@@ -675,6 +768,18 @@ export default function EscalatorGame({ onAddStamp, stamps }: EscalatorGameProps
                   <span className="font-black text-xs sm:text-sm">
                     {gameMode === "line" ? "아야! 노란 번개선에 발이 닿았어요!" : "앗! 얼른 손잡이를 꽉 잡으세요!"}
                   </span>
+                </div>
+              </div>
+            )}
+
+            {/* 3-Second Countdown Overlay */}
+            {startTimer !== null && (
+              <div className="absolute inset-0 bg-slate-900/85 flex flex-col items-center justify-center text-white z-20">
+                <div className="bg-yellow-400 text-slate-900 w-24 h-24 rounded-full flex items-center justify-center font-black text-5xl shadow-lg animate-bounce">
+                  {startTimer}
+                </div>
+                <div className="text-xl font-black text-yellow-300 mt-6 font-display">
+                  🚦 {startTimer}초 뒤에 훈련이 시작됩니다! 🚦
                 </div>
               </div>
             )}
@@ -817,79 +922,22 @@ export default function EscalatorGame({ onAddStamp, stamps }: EscalatorGameProps
 
             {/* Interactive Simulator Pad (Only displayed when webcam is off) */}
             {!useWebcam && (
-              <div className="bg-pink-50/20 rounded-2xl p-4 border-2 border-pink-100 space-y-3">
+              <div className="bg-pink-50/40 rounded-2xl p-4 border-2 border-pink-100 space-y-3">
                 <div className="text-[11px] font-black text-pink-600 uppercase tracking-widest flex items-center gap-1">
-                  <span>🧸</span> 연습 인형 리모컨
+                  <span>🧸</span> 연습 인형 조종하기
                 </div>
-                <p className="text-slate-500 text-[10px] font-bold leading-normal">
-                  카메라가 꺼져 있을 때는 아래 버튼으로 인형을 조종해 안전 약속을 지켜주세요!
-                </p>
-
-                {gameMode === "line" ? (
-                  <div className="space-y-2">
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        onClick={() => {
-                          setSimFeetInCorrectArea(true);
-                          setWarningActive(false);
-                        }}
-                        className={`py-2 px-3 rounded-xl text-xs font-black transition border-2 ${
-                          simFeetInCorrectArea
-                            ? "bg-pink-500 text-white border-pink-400"
-                            : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
-                        }`}
-                      >
-                        안쪽 서기 (안전) 😊
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSimFeetInCorrectArea(false);
-                          setWarningActive(true);
-                          playSound("beep");
-                        }}
-                        className={`py-2 px-3 rounded-xl text-xs font-black transition border-2 ${
-                          !simFeetInCorrectArea
-                            ? "bg-rose-500 text-white border-rose-400"
-                            : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
-                        }`}
-                      >
-                        선 밟기 (위험) 😢
-                      </button>
-                    </div>
+                <div className="text-slate-600 text-xs font-bold leading-relaxed space-y-2">
+                  <p>
+                    {gameMode === "line"
+                      ? "💡 왼쪽 화면의 연습인형 캐릭터를 누르고 좌우로 드래그해서 움직여보세요! 초록색 안전구역에 세워두면 성공해요!"
+                      : "💡 왼쪽 화면의 연습인형 캐릭터를 누르고 오른쪽 파란/핑크 고무 손잡이 부근으로 데려가면 손잡이를 꼭 잡을 수 있어요!"}
+                  </p>
+                  <div className="bg-white/80 rounded-xl p-2.5 text-[11px] text-center text-pink-600 border border-pink-200">
+                    현재 상태: {gameMode === "line" 
+                      ? (simFeetInCorrectArea ? "💚 안전 구역 안쪽" : "❤️ 노란 번개선 밟음! (위험)")
+                      : (simHoldingHandrail ? "💚 손잡이 꼭 잡음!" : "❤️ 손놓음! (위험)")}
                   </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        onClick={() => {
-                          setSimHoldingHandrail(true);
-                          setWarningActive(false);
-                        }}
-                        className={`py-2 px-3 rounded-xl text-xs font-black transition border-2 ${
-                          simHoldingHandrail
-                            ? "bg-sky-500 text-white border-sky-400"
-                            : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
-                        }`}
-                      >
-                        꼭 잡기 (안전) ✊
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSimHoldingHandrail(false);
-                          setWarningActive(true);
-                          playSound("beep");
-                        }}
-                        className={`py-2 px-3 rounded-xl text-xs font-black transition border-2 ${
-                          !simHoldingHandrail
-                            ? "bg-slate-700 text-white border-slate-600"
-                            : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
-                        }`}
-                      >
-                        손놓기 (위험) 🖐️
-                      </button>
-                    </div>
-                  </div>
-                )}
+                </div>
               </div>
             )}
           </div>

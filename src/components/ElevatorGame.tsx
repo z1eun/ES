@@ -10,7 +10,7 @@ interface ElevatorGameProps {
 
 export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) {
   const [gameMode, setGameMode] = useState<"door" | "bell">("door");
-  const [useWebcam, setUseWebcam] = useState<boolean>(false);
+  const [useWebcam, setUseWebcam] = useState<boolean>(true);
   const [webcamStatus, setWebcamStatus] = useState<"idle" | "requesting" | "active" | "error">("idle");
   const [gameState, setGameState] = useState<"ready" | "playing" | "failed" | "passed">("ready");
 
@@ -20,7 +20,19 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
   const [gameMessage, setGameMessage] = useState<string>("초록색 버튼을 눌러서 재밌는 엘리베이터 놀이를 시작해요! 💛");
   const [warningActive, setWarningActive] = useState<boolean>(false);
 
-  // Character Simulator states (backup without webcam)
+  // 3-second pre-game timer
+  const [startTimer, setStartTimer] = useState<number | null>(null);
+
+  // 5-second emergency bell hold trackers
+  const [bellHoldProgress, setBellHoldProgress] = useState<number>(0);
+  const [isPressingSimBell, setIsPressingSimBell] = useState<boolean>(false);
+  const isPressingSimBellRef = useRef<boolean>(false);
+
+  // Character Simulator states and dynamic coordinates
+  const [charPos, setCharPos] = useState({ x: 320, y: 370 });
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const isDraggingRef = useRef<boolean>(false);
+
   const [simLeaningOnDoor, setSimLeaningOnDoor] = useState<boolean>(false);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -173,7 +185,34 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
     setWebcamStatus("idle");
   };
 
-  // Door closed incremental loop & Emergency alarm sirens
+  // 3-second pre-game countdown before training starts
+  useEffect(() => {
+    if (startTimer === null) return;
+    if (startTimer === 0) {
+      setStartTimer(null);
+      setGameState("playing");
+      setDoorProgress(0);
+      setBellHoldProgress(0);
+      setWarningActive(false);
+      if (gameMode === "door") {
+        playSound("door_close");
+        setGameMessage("방송 안내: '문이 스르륵 닫힙니다! 노란선 뒤로 얌전히 물러나 서주세요! 🚪'");
+      } else {
+        setBellStep("alarm");
+        playSound("beep");
+        setGameMessage("어라라! 정전이 되어 불이 꺼졌어요! 🥺 당황하지 말고 옆에 있는 커다란 빨간 비상벨을 꾸욱 5초간 눌러요!");
+      }
+      playSound("happy");
+      return;
+    }
+    const t = setTimeout(() => {
+      setStartTimer((prev) => (prev !== null ? prev - 1 : null));
+      playSound("beep");
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [startTimer, gameMode]);
+
+  // Door closed incremental loop & 5-second Emergency button holder loop
   useEffect(() => {
     let interval: any = null;
     if (gameState === "playing") {
@@ -186,7 +225,7 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
             playSound("beep");
             setDoorProgress(0);
             setGameState("failed");
-            setGameMessage("삐비빅! 🛑 문 근처에서 손이나 몸의 움직임이 느껴져서 문이 다시 열렸어요! 문틈에서 꼬옥 물러서야 안전해요.");
+            setGameMessage("삐비빅! 🛑 문 근처에서 손이나 몸의 움직임이 느껴져서 문이 다시 열렸어요! 안전선 뒤쪽으로 꼬옥 물러서서 가만히 서 있어주세요.");
             clearInterval(interval);
           } else {
             setDoorProgress((prev) => {
@@ -195,21 +234,46 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
                 setGameState("passed");
                 onAddStamp("elevator_door", 100);
                 playSound("success");
-                setGameMessage("우와! 문이 완전히 닫힐 때까지 이쁘게 뒤쪽에 가만히 서 계셨네요! 정말 씩씩하고 대견해요. 💖");
+                setGameMessage("우와! 문이 완전히 닫힐 때까지 이쁘게 뒤쪽에 가만히 서 계셨네요! 정말 씩씩하고 대견해요. 스탬프를 드려요! 💖");
                 return 100;
               }
-              return prev + 5; // 5% per tick
+              return prev + 5; // 5% per tick, total of ~6 seconds
             });
           }
         }, 300);
-      } else if (gameMode === "bell" && bellStep === "alarm") {
+      } else if (gameMode === "bell") {
+        // Continuous 5-second bell checker (runs every 200ms)
         interval = setInterval(() => {
-          playSound("alarm");
-        }, 1500);
+          // In alarm phase, verify if they are pressing (either through webcam motion or sim key state)
+          if (bellStep === "alarm") {
+            const isHolding = useWebcam ? warningActive : isPressingSimBellRef.current;
+
+            if (isHolding) {
+              setBellHoldProgress((p) => {
+                const next = Math.min(100, p + 4); // +4% every 200ms reaches 100% in exactly 5 seconds!
+                if (next >= 100) {
+                  clearInterval(interval);
+                  triggerEmergencyBell();
+                }
+                return next;
+              });
+              setGameMessage(`🚨 비상벨을 꼬욱 누르고 있어요! 구조대에 신호를 보내는 중... (누른 시간: ${Math.round((bellHoldProgress / 100) * 5)}초 / 5초)`);
+              if (Math.round(bellHoldProgress) % 12 === 0) {
+                playSound("beep");
+              }
+            } else {
+              setBellHoldProgress((p) => Math.max(0, p - 6)); // decay progress if they let go
+              setGameMessage("어라라! 손을 떼면 안 돼요! 빨간 비상벨 버튼을 5초 동안 꾸우욱 누르고 계세요! ✊");
+            }
+          } else if (bellStep === "alarm") {
+            // siren alarm sound
+            playSound("alarm");
+          }
+        }, 200);
       }
     }
     return () => clearInterval(interval);
-  }, [gameState, gameMode, bellStep, useWebcam, warningActive, simLeaningOnDoor]);
+  }, [gameState, gameMode, bellStep, useWebcam, warningActive, simLeaningOnDoor, bellHoldProgress]);
 
   // Canvas rendering loop
   useEffect(() => {
@@ -225,31 +289,28 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       if (useWebcam && webcamStatus === "active" && video) {
-        ctx.save();
-        ctx.translate(canvas.width, 0);
-        ctx.scale(-1, 1);
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        ctx.restore();
 
         const w = canvas.width;
         const h = canvas.height;
 
-        // Perform real-time central motion detection in Door Closing Mode
+        // Perform real-time motion detection for staying behind the boundary line
         if (gameState === "playing" && gameMode === "door") {
-          const centerRegion = { x: w / 2 - 80, y: 80, w: 160, h: h - 160 };
-          const currentCenter = ctx.getImageData(centerRegion.x, centerRegion.y, centerRegion.w, centerRegion.h);
+          // Detection region below/in-front-of the safety line (closer to the doors/camera)
+          const frontRegion = { x: 50, y: h - 130, w: w - 100, h: 90 };
+          const currentFront = ctx.getImageData(frontRegion.x, frontRegion.y, frontRegion.w, frontRegion.h);
           
           let motionPixels = 0;
           if (prevFrameData.current) {
             const step = 4;
-            const total = centerRegion.w * centerRegion.h;
-            for (let i = 0; i < currentCenter.data.length; i += step * 4) {
-              const diff = Math.abs(currentCenter.data[i] - (prevFrameData.current?.data[i] || 0));
+            const total = frontRegion.w * frontRegion.h;
+            for (let i = 0; i < currentFront.data.length; i += step * 4) {
+              const diff = Math.abs(currentFront.data[i] - (prevFrameData.current?.data[i] || 0));
               if (diff > 45) motionPixels++;
             }
             const ratio = motionPixels / (total / step);
             if (ratio > 0.15) {
-              setWarningActive(true);
+              setWarningActive(true); // Stepped forward / crossing the line
             } else {
               setWarningActive(false);
             }
@@ -259,7 +320,7 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
 
         // Perform hands motion detection over virtual bell button in Trapped Mode
         if (gameState === "playing" && gameMode === "bell" && bellStep === "alarm") {
-          const bellRegion = { x: w / 2 - 50, y: h / 2 - 50, w: 100, h: 100 };
+          const bellRegion = { x: w / 2 - 70, y: h / 2 - 70, w: 140, h: 140 };
           const currentBell = ctx.getImageData(bellRegion.x, bellRegion.y, bellRegion.w, bellRegion.h);
           
           let bellMotion = 0;
@@ -270,10 +331,13 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
               if (diff > 50) bellMotion++;
             }
             const ratio = bellMotion / ((bellRegion.w * bellRegion.h) / step);
-            if (ratio > 0.2) {
-              triggerEmergencyBell();
+            if (ratio > 0.15) {
+              setWarningActive(true); // Hand is on the bell!
+            } else {
+              setWarningActive(false);
             }
           }
+          prevFrameData.current = ctx.getImageData(0, 0, w, h);
         }
 
         drawWebcamHUD(ctx, w, h);
@@ -315,43 +379,230 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
         ctx.stroke();
       }
 
-      // Safe Standing zone guidelines (Center Box) - Soft green cloud box
+      // Safe Standing zone guidelines (Floor Line) - Beautiful structured boundary
       if (doorProgress < 100 && gameState === "playing") {
-        ctx.strokeStyle = "rgba(16,185,129,0.5)";
-        ctx.lineWidth = 3;
-        ctx.strokeRect(w / 2 - 80, 80, 160, h - 160);
-        ctx.fillStyle = "rgba(16, 185, 129, 0.15)";
-        ctx.fillRect(w / 2 - 80, 80, 160, h - 160);
+        const lineY = h - 130;
+        
+        // Draw the neon safety boundary line
+        ctx.strokeStyle = warningActive ? "#ef4444" : "#fbbf24";
+        ctx.lineWidth = 10;
+        ctx.beginPath();
+        ctx.moveTo(20, lineY);
+        ctx.lineTo(w - 20, lineY);
+        ctx.stroke();
 
+        // Safe region behind the line - green glowing tint
+        ctx.fillStyle = "rgba(16, 185, 129, 0.12)";
+        ctx.fillRect(20, 20, w - 40, lineY - 20);
+        ctx.strokeStyle = "rgba(16, 185, 129, 0.4)";
+        ctx.lineWidth = 3;
+        ctx.strokeRect(20, 20, w - 40, lineY - 20);
+
+        // Labels
         ctx.fillStyle = "#ffffff";
+        ctx.strokeStyle = "#1e293b";
+        ctx.lineWidth = 3;
         ctx.font = "bold 13px sans-serif";
         ctx.textAlign = "center";
-        ctx.fillText("🌈 안전 구역 (손을 꼭 안으로 모아요)", w / 2, 60);
+        ctx.strokeText("⭐ 안전 구역 (이 선의 뒤쪽에 이쁘게 서 있어주세요!) ⭐", w / 2, 45);
+        ctx.fillText("⭐ 안전 구역 (이 선의 뒤쪽에 이쁘게 서 있어주세요!) ⭐", w / 2, 45);
+
+        ctx.fillStyle = warningActive ? "#fca5a5" : "#fef08a";
+        ctx.font = "bold 11px sans-serif";
+        ctx.strokeText("⚠️ 문에 손을 대거나 기대면 삐익! 다시 열려요 ⚠️", w / 2, lineY - 12);
+        ctx.fillText("⚠️ 문에 손을 대거나 기대면 삐익! 다시 열려요 ⚠️", w / 2, lineY - 12);
       }
     }
 
     if (gameMode === "bell" && gameState === "playing") {
       if (bellStep === "alarm") {
         const blink = Date.now() % 1000 < 500;
-        ctx.fillStyle = blink ? "#ef4444" : "#ec4899";
+        
+        // Draw hologram background card
+        ctx.fillStyle = "rgba(15, 23, 42, 0.65)";
         ctx.beginPath();
-        ctx.arc(w / 2, h / 2, 45, 0, Math.PI * 2);
+        ctx.roundRect(w / 2 - 110, h / 2 - 110, 220, 220, 24);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(244, 63, 94, 0.4)";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // 3D red button in center
+        ctx.fillStyle = blink ? "#f43f5e" : "#e11d48";
+        ctx.beginPath();
+        ctx.arc(w / 2, h / 2, 55, 0, Math.PI * 2);
         ctx.fill();
         ctx.strokeStyle = "#ffffff";
         ctx.lineWidth = 4;
         ctx.stroke();
 
+        // Charging radial ring showing hold progress (5 seconds)
+        if (bellHoldProgress > 0) {
+          ctx.strokeStyle = "#10b981";
+          ctx.lineWidth = 8;
+          ctx.beginPath();
+          ctx.arc(w / 2, h / 2, 68, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * (bellHoldProgress / 100)));
+          ctx.stroke();
+        }
+
         ctx.fillStyle = "#ffffff";
-        ctx.font = "bold 13px sans-serif";
+        ctx.font = "bold 14px sans-serif";
         ctx.textAlign = "center";
-        ctx.fillText("🚨 비상벨", w / 2, h / 2 - 10);
+        ctx.fillText("🚨 비상벨", w / 2, h / 2 - 12);
+        
         ctx.font = "bold 11px sans-serif";
-        ctx.fillText("여기에 손 대기", w / 2, h / 2 + 15);
+        ctx.fillStyle = "#ffe4e6";
+        ctx.fillText("여기에 손을 대고", w / 2, h / 2 + 12);
+        ctx.fillText("5초간 꾸욱 버티기!", w / 2, h / 2 + 28);
       }
     }
   };
 
   const drawElevatorSimulation = (ctx: CanvasRenderingContext2D, w: number, h: number) => {
+    if (gameMode === "bell") {
+      // Draw brushed metallic background
+      ctx.fillStyle = "#cbd5e1"; // metallic silver
+      ctx.fillRect(0, 0, w, h);
+      
+      // Draw modern border
+      ctx.strokeStyle = "#94a3b8";
+      ctx.lineWidth = 8;
+      ctx.strokeRect(4, 4, w - 8, h - 8);
+
+      // 1. Digital LED Status display at the top
+      ctx.fillStyle = "#1e293b";
+      ctx.beginPath();
+      ctx.roundRect(w / 2 - 180, 20, 360, 60, 12);
+      ctx.fill();
+      ctx.strokeStyle = "#475569";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      // Flashing text inside LED
+      const blink = Date.now() % 1000 < 500;
+      ctx.textAlign = "center";
+      if (bellStep === "alarm") {
+        ctx.fillStyle = blink ? "#ef4444" : "#f59e0b";
+        ctx.font = "bold 15px sans-serif";
+        ctx.fillText("🚨 정전 발생! 5초간 비상벨을 누르세요 🚨", w / 2, 45);
+        ctx.font = "11px monospace";
+        ctx.fillStyle = "#94a3b8";
+        ctx.fillText("STATUS: POWER FAIL / OUT OF SERVICE", w / 2, 68);
+      } else if (bellStep === "ringing") {
+        ctx.fillStyle = "#60a5fa";
+        ctx.font = "bold 15px sans-serif";
+        ctx.fillText("☎️ 구조 신호 전송 중...", w / 2, 45);
+        ctx.font = "11px monospace";
+        ctx.fillStyle = "#94a3b8";
+        ctx.fillText(`TRANSMITTING EMERGENCY BEACON (${Math.round((bellHoldProgress/100)*5)}초)`, w / 2, 68);
+      } else if (bellStep === "connected") {
+        ctx.fillStyle = "#34d399";
+        ctx.font = "bold 15px sans-serif";
+        ctx.fillText("☎️ 상담 센터 연결 완료! 대기 중", w / 2, 45);
+        ctx.font = "11px monospace";
+        ctx.fillStyle = "#94a3b8";
+        ctx.fillText("CONNECTED TO EMERGENCY DISPATCH", w / 2, 68);
+      } else if (bellStep === "rescued") {
+        ctx.fillStyle = "#10b981";
+        ctx.font = "bold 16px sans-serif";
+        ctx.fillText("🎉 구조 완료! 대피 통로 확보 🎉", w / 2, 45);
+        ctx.font = "11px monospace";
+        ctx.fillStyle = "#34d399";
+        ctx.fillText("RESCUE MISSION SUCCESSFUL!", w / 2, 68);
+      } else {
+        ctx.fillStyle = "#10b981";
+        ctx.font = "bold 16px sans-serif";
+        ctx.fillText("🎈 정상 운행 중 🎈", w / 2, 45);
+        ctx.font = "11px monospace";
+        ctx.fillStyle = "#94a3b8";
+        ctx.fillText("SYSTEM STATUS: OK", w / 2, 68);
+      }
+
+      // 2. Draw Floor Button grid
+      const btnRadius = 24;
+      const buttons = [
+        { label: "5", x: w / 2 - 120, y: 130 },
+        { label: "4", x: w / 2 - 40,  y: 130 },
+        { label: "3", x: w / 2 + 40,  y: 130 },
+        { label: "2", x: w / 2 + 120, y: 130 },
+        { label: "1", x: w / 2 - 80,  y: 195 },
+        { label: "◀▶", x: w / 2,     y: 195 },
+        { label: "▶◀", x: w / 2 + 80,  y: 195 },
+      ];
+
+      buttons.forEach((btn) => {
+        ctx.fillStyle = "#f1f5f9";
+        ctx.beginPath();
+        ctx.arc(btn.x, btn.y, btnRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#94a3b8";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        ctx.fillStyle = "#475569";
+        ctx.font = "bold 13px sans-serif";
+        ctx.fillText(btn.label, btn.x, btn.y + 5);
+      });
+
+      // 3. Draw GIANT glowing red emergency button in center bottom
+      const bellX = w / 2;
+      const bellY = h - 110;
+      const bellR = 50;
+
+      // Glowing pulse ring if trapped
+      if (bellStep === "alarm") {
+        const pulse = 10 + Math.sin(Date.now() / 150) * 8;
+        ctx.fillStyle = "rgba(239, 68, 68, 0.2)";
+        ctx.beginPath();
+        ctx.arc(bellX, bellY, bellR + pulse, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Main Button body
+      ctx.fillStyle = (bellStep === "alarm" && blink) ? "#ef4444" : "#dc2626";
+      ctx.beginPath();
+      ctx.arc(bellX, bellY, bellR, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Button rim
+      ctx.strokeStyle = "#ffe4e6";
+      ctx.lineWidth = 4;
+      ctx.stroke();
+
+      // Bevel edge
+      ctx.strokeStyle = "#991b1b";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(bellX, bellY, bellR - 5, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Progress charging ring around button (5 seconds)
+      if (bellHoldProgress > 0) {
+        ctx.strokeStyle = "#10b981";
+        ctx.lineWidth = 10;
+        ctx.beginPath();
+        ctx.arc(bellX, bellY, bellR + 12, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * (bellHoldProgress / 100)));
+        ctx.stroke();
+
+        // Percent text
+        ctx.fillStyle = "#10b981";
+        ctx.font = "bold 14px sans-serif";
+        ctx.strokeText(`꾸욱 누르는 중! ${Math.round(bellHoldProgress)}%`, bellX, bellY - 70);
+        ctx.fillText(`꾸욱 누르는 중! ${Math.round(bellHoldProgress)}%`, bellX, bellY - 70);
+      }
+
+      // Bell label
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 14px sans-serif";
+      ctx.fillText("🚨 비상벨", bellX, bellY - 6);
+      ctx.font = "bold 10px sans-serif";
+      ctx.fillStyle = "#fecdd3";
+      ctx.fillText("EMERGENCY", bellX, bellY + 14);
+      ctx.fillText("(5초간 누르기)", bellX, bellY + 26);
+      
+      return;
+    }
+
     // 1. Draw Cute Cookie House Elevator Interior
     const isDarkAlarm = bellStep === "alarm" && Date.now() % 800 < 400;
     ctx.fillStyle = isDarkAlarm ? "#4c1d95" : "#fef2f2"; // soft warm purple vs pale sweet pink
@@ -392,8 +643,8 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
     }
 
     // 3. Draw Safety Kid Character inside elevator with cute bunny hat
-    const charX = w / 2;
-    const charY = h - 110;
+    const charX = charPos.x;
+    const charY = charPos.y;
 
     // Bunny ears
     ctx.fillStyle = "#fbcfe8";
@@ -531,27 +782,119 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
     }
   };
 
+  const handleCanvasPointerDown = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    
+    let clientX = 0;
+    let clientY = 0;
+    if ("touches" in e) {
+      if (e.touches.length === 0) return;
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    }
+    
+    // Calculate coordinates inside 640x480 canvas space
+    const canvasX = ((clientX - rect.left) / rect.width) * canvas.width;
+    const canvasY = ((clientY - rect.top) / rect.height) * canvas.height;
+
+    if (gameMode === "bell") {
+      if (bellStep === "alarm") {
+        // Giant Emergency button center: x = 320, y = 370 (h - 110), radius = 50.
+        const dist = Math.sqrt((canvasX - 320) ** 2 + (canvasY - 370) ** 2);
+        if (dist <= 50) {
+          isPressingSimBellRef.current = true;
+          setIsPressingSimBell(true);
+        }
+      }
+    } else {
+      // Draggable character check!
+      const dist = Math.sqrt((canvasX - charPos.x) ** 2 + (canvasY - charPos.y) ** 2);
+      if (dist < 45) {
+        isDraggingRef.current = true;
+        setIsDragging(true);
+      }
+    }
+  };
+
+  const handleCanvasPointerMove = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    
+    let clientX = 0;
+    let clientY = 0;
+    if ("touches" in e) {
+      if (e.touches.length === 0) return;
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    }
+    
+    const canvasX = ((clientX - rect.left) / rect.width) * canvas.width;
+    const canvasY = ((clientY - rect.top) / rect.height) * canvas.height;
+
+    if (gameMode === "bell") {
+      if (isPressingSimBellRef.current) {
+        // Keep pressing if finger or cursor stays within comfortable range
+        const dist = Math.sqrt((canvasX - 320) ** 2 + (canvasY - 370) ** 2);
+        if (dist > 85) {
+          isPressingSimBellRef.current = false;
+          setIsPressingSimBell(false);
+        }
+      }
+    } else {
+      if (isDraggingRef.current) {
+        // Constrain dragging bounds
+        const newX = Math.max(40, Math.min(canvas.width - 40, canvasX));
+        const newY = Math.max(180, Math.min(canvas.height - 110, canvasY));
+        setCharPos({ x: newX, y: newY });
+
+        // If character goes below y = 350 (stepping forward too close to doors/front area), trigger warning!
+        if (newY > 350) {
+          setSimLeaningOnDoor(true);
+          setWarningActive(true);
+        } else {
+          setSimLeaningOnDoor(false);
+          setWarningActive(false);
+        }
+      }
+    }
+  };
+
+  const handleCanvasPointerUp = () => {
+    isDraggingRef.current = false;
+    setIsDragging(false);
+
+    isPressingSimBellRef.current = false;
+    setIsPressingSimBell(false);
+  };
+
   const startTraining = () => {
     playSound("happy");
-    setGameState("playing");
     setDoorProgress(0);
+    setBellHoldProgress(0);
     setWarningActive(false);
-
-    if (gameMode === "door") {
-      playSound("door_close");
-      setGameMessage("방송 안내: '문이 스르륵 닫힙니다! 노란선 뒤로 얌전히 물러나 서주세요! 🚪'");
-    } else {
-      setBellStep("alarm");
-      playSound("beep");
-      setGameMessage("어라라! 정전이 되어 불이 꺼졌어요! 🥺 당황하지 말고 옆에 있는 커다란 빨간 비상벨을 꾸욱 눌러요!");
-    }
+    setStartTimer(3); // Start 3-second pre-game timer
+    setGameState("ready");
+    setGameMessage("⏰ 3초 타이머 시작! 바르게 대기하고 계세요!");
   };
 
   const resetTraining = () => {
     setGameState("ready");
+    setStartTimer(null);
     setDoorProgress(0);
+    setBellHoldProgress(0);
     setBellStep("none");
     setWarningActive(false);
+    setSimLeaningOnDoor(false);
+    setCharPos({ x: 320, y: 370 });
     setGameMessage("초록색 버튼을 눌러서 재밌는 엘리베이터 놀이를 시작해요! 💛");
   };
 
@@ -647,8 +990,28 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
               ref={canvasRef}
               width={640}
               height={480}
-              className="w-full h-full block object-cover scale-x-[-1]"
+              className="w-full h-full block object-cover cursor-grab active:cursor-grabbing"
+              onMouseDown={handleCanvasPointerDown}
+              onMouseMove={handleCanvasPointerMove}
+              onMouseUp={handleCanvasPointerUp}
+              onMouseLeave={handleCanvasPointerUp}
+              onTouchStart={handleCanvasPointerDown}
+              onTouchMove={handleCanvasPointerMove}
+              onTouchEnd={handleCanvasPointerUp}
+              onTouchCancel={handleCanvasPointerUp}
             />
+
+            {/* 3-Second countdown countdown */}
+            {startTimer !== null && (
+              <div className="absolute inset-0 bg-rose-500/85 backdrop-blur-sm flex flex-col items-center justify-center text-white z-20">
+                <div className="text-8xl font-black animate-ping text-yellow-300 font-display">
+                  {startTimer}
+                </div>
+                <p className="text-sm font-black text-white mt-8 tracking-wider">
+                  ⚠️ 엘리베이터 훈련 준비 중! 움직이지 말고 서 계세요 ⚠️
+                </p>
+              </div>
+            )}
 
             {/* Glowing cartoon warnings */}
             {(warningActive || bellStep === "alarm") && gameState === "playing" && (
@@ -656,7 +1019,7 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
                 <div className="bg-rose-600 border-2 border-white text-white px-5 py-3 rounded-2xl flex items-center gap-1.5 shadow-xl animate-bounce">
                   <span className="text-xl">⚠️</span>
                   <span className="font-black text-xs sm:text-sm">
-                    {gameMode === "door" ? "조심해요! 닫히는 문 근처에 몸이 있어요!" : "🚨 삐뽀삐뽀! 정전벨을 눌러요!"}
+                    {gameMode === "door" ? "조심해요! 안전선 가까이에 서 있어요!" : "🚨 삐뽀삐뽀! 비상벨을 5초간 꾹 눌러요!"}
                   </span>
                 </div>
               </div>
@@ -819,69 +1182,23 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
               </p>
             </div>
 
-            {/* Virtual character controller (only when webcam is disabled) */}
+            {/* Virtual character controller instructions (only when webcam is disabled) */}
             {!useWebcam && (
-              <div className="bg-rose-50/20 rounded-2xl p-4 border-2 border-rose-100 space-y-3">
+              <div className="bg-rose-50/50 rounded-2xl p-4 border-2 border-rose-100 space-y-2">
                 <div className="text-[11px] font-black text-rose-600 uppercase tracking-widest flex items-center gap-1">
-                  <span>🧸</span> 연습 인형 리모컨
+                  <span>🧸</span> 대화형 놀이 학습 가이드
                 </div>
-                <p className="text-slate-500 text-[10px] font-bold leading-normal">
-                  카메라가 꺼져 있을 때는 아래 버튼으로 인형을 조종해 엘리베이터 수칙을 익혀주세요!
+                <p className="text-xs text-slate-600 font-bold leading-relaxed">
+                  {gameMode === "door" ? (
+                    <span>
+                      화면 속에 있는 귀여운 토끼 모자 캐릭터를 <strong>마우스나 손가락으로 꾹 잡아서 끌고 가보세요!</strong> 노란색 안전선 뒤로 얌전히 옮겨주면 성공할 수 있어요! 👣
+                    </span>
+                  ) : (
+                    <span>
+                      화면 한가운데에 나타난 <strong>빨간색 비상벨 버튼을 마우스나 손가락으로 5초 동안 꾸욱~</strong> 누르고 있어 보세요! 게이지가 꽉 차면서 구조 대원이 호출돼요! ✊
+                    </span>
+                  )}
                 </p>
-
-                {gameMode === "door" ? (
-                  <div className="space-y-2">
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        onClick={() => {
-                          setSimLeaningOnDoor(false);
-                          setWarningActive(false);
-                        }}
-                        className={`py-2 px-3 rounded-xl text-xs font-black transition border-2 ${
-                          !simLeaningOnDoor
-                            ? "bg-rose-500 text-white border-rose-400"
-                            : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
-                        }`}
-                      >
-                        뒤로 서기 (안전) 😊
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSimLeaningOnDoor(true);
-                          setWarningActive(true);
-                          playSound("beep");
-                        }}
-                        className={`py-2 px-3 rounded-xl text-xs font-black transition border-2 ${
-                          simLeaningOnDoor
-                            ? "bg-rose-600 text-white border-rose-500"
-                            : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
-                        }`}
-                      >
-                        기대기 (위험) 😢
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="grid grid-cols-1">
-                      <button
-                        onClick={() => {
-                          if (bellStep === "alarm") {
-                            triggerEmergencyBell();
-                          }
-                        }}
-                        disabled={bellStep !== "alarm"}
-                        className={`py-2.5 px-3 rounded-xl text-xs font-black transition border-2 shadow-sm ${
-                          bellStep === "alarm"
-                            ? "bg-yellow-400 hover:bg-yellow-300 text-slate-900 border-yellow-300 animate-bounce"
-                            : "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                        }`}
-                      >
-                        🚨 비상벨 빨간 버튼 꾹 누르기!
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
             )}
           </div>
