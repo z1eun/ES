@@ -1,0 +1,8 @@
+{
+  "name": "에스컬레이터 & 엘리베이터 카메라 안전 교육",
+  "description": "웹캠 카메라를 활용해 에스컬레이터와 엘리베이터의 안전 수칙을 인터랙티브 게임으로 체험하고, AI 안전 스냅샷 진단을 통해 안전 지킴이 수료증을 받는 체험형 교육 앱입니다.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

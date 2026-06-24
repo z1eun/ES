@@ -1,0 +1,95 @@
+@font-face {
+  font-family: 'OkDandan';
+  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/2508-2@1.0/OkDanDan-Bold.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+}
+
+@import url('https://fonts.googleapis.com/css2?family=Gaegu:wght@400;700&family=Jua&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "OkDandan", "Gaegu", "Jua", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "OkDandan", "Jua", "Gaegu", sans-serif;
+  --font-mono: "OkDandan", "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+/* Force OkDandan for all interactive and semantic elements */
+* {
+  font-family: 'OkDandan', sans-serif !important;
+}
+
+/* Slightly scale up the font sizes of description and explanatory texts to make them highly readable */
+.text-xs {
+  font-size: 0.875rem !important; /* ~14px instead of 12px */
+}
+
+.text-sm {
+  font-size: 1rem !important; /* ~16px instead of 14px */
+}
+
+.text-\[10px\] {
+  font-size: 12px !important; /* ~12px instead of 10px */
+}
+
+.text-\[11px\] {
+  font-size: 13.5px !important; /* ~13.5px instead of 11px */
+}
+
+
+/* Custom safety badge and keyframes animations */
+@keyframes pulse-slow {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.05); opacity: 0.9; }
+}
+
+@keyframes bounce-slow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes float-cloud {
+  0%, 100% { transform: translateX(0) translateY(0); }
+  50% { transform: translateX(12px) translateY(-4px); }
+}
+
+@keyframes escalator-move {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(40px); }
+}
+
+@keyframes ripple-wave {
+  0% { transform: scale(0.8); opacity: 0.5; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 3.5s infinite ease-in-out;
+}
+
+.animate-bounce-slow {
+  animation: bounce-slow 2.5s infinite ease-in-out;
+}
+
+.animate-float-cloud {
+  animation: float-cloud 6s infinite ease-in-out;
+}
+
+.animate-escalator {
+  animation: escalator-move 2s infinite linear;
+}
+
+.animate-ripple {
+  animation: ripple-wave 1.5s infinite ease-out;
+}
+
+/* Custom styling for certificate print look */
+.certificate-bg {
+  background: radial-gradient(circle, #fffdf5 0%, #fffbf0 100%);
+  border: 12px double #f4c430;
+}
+
+.stamp-slot {
+  background-image: radial-gradient(#ffe4e6 2px, transparent 2px);
+  background-size: 8px 8px;
+}
