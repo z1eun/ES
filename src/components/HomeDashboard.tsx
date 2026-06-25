@@ -187,38 +187,71 @@ export default function HomeDashboard({
         <div className="absolute -left-4 -bottom-4 text-6xl opacity-20 pointer-events-none">⭐</div>
         <div className="absolute -right-4 -top-4 text-6xl opacity-20 pointer-events-none">✨</div>
 
-        <div className="space-y-2 max-w-xl text-left relative z-10">
-          <h3 className="text-lg sm:text-xl font-black text-amber-950 font-display flex items-center gap-2">
-            <span className="text-2xl animate-bounce-slow">👑</span>
-            명예의 꼬마 지키미 황금 수료증 획득하기!
-          </h3>
-          <p className="text-xs sm:text-sm text-amber-900 leading-relaxed font-semibold">
-            네 개의 미션을 씩씩하게 성공하셨나요? 혹은 멋진 웹캠 앞에 서서 내 안전 포즈를 칭찬받고 싶으신가요?<br />
-            <b>'AI 수료증 시험'</b> 버튼을 눌러 카메라 셀카를 찍으면, 인공지능 로봇 선생님이 우주에서 가장 예쁜 인증서를 인쇄해 줄게요! 💖
-          </p>
-        </div>
+        {completedCount >= 4 ? (
+          <div className="w-full space-y-6 text-center relative z-10 p-2">
+            <div className="flex flex-col items-center justify-center space-y-2">
+              <span className="text-5xl animate-bounce">👑</span>
+              <h3 className="text-xl sm:text-2xl font-black text-amber-950 font-display">
+                축하합니다! 명예의 꼬마 지키미 황금 수료증 수여!
+              </h3>
+              <p className="text-xs sm:text-sm text-amber-900 max-w-xl mx-auto font-semibold leading-relaxed">
+                4개의 미션을 모두 씩씩하게 완료하여 명예로운 안전 학교의 황금 수료증을 획득하셨습니다! 대원님은 최고의 안전 어린이 영웅이에요! 💖
+              </p>
+            </div>
 
-        <button
-          onClick={() => setActiveTab("certificate")}
-          disabled={completedCount < 4}
-          className={`w-full md:w-auto px-8 py-4 rounded-[1.5rem] font-black transition-all flex items-center justify-center gap-2 shadow-md border-2 ${
-            completedCount >= 4
-              ? "bg-rose-500 hover:bg-rose-400 text-white border-rose-400 hover:scale-105 active:scale-95 cursor-pointer"
-              : "bg-slate-200 text-slate-400 border-slate-300 cursor-not-allowed shadow-none"
-          }`}
-        >
-          {completedCount >= 4 ? (
-            <>
-              <Camera className="w-5 h-5 animate-bounce" />
-              📸 황금 수료증 시험 시작하기!
-            </>
-          ) : (
-            <>
+            {/* Gorgeous Certificate Sheet Frame */}
+            <div className="mx-auto max-w-lg bg-white rounded-[2rem] p-6 md:p-8 border-8 border-yellow-400 shadow-2xl relative text-slate-800 space-y-6">
+              <div className="absolute left-4 top-4 text-2xl select-none">🏆</div>
+              <div className="absolute right-4 top-4 text-2xl select-none">✨</div>
+              
+              <div className="space-y-1">
+                <span className="text-[10px] font-black tracking-widest text-yellow-600 bg-yellow-50 px-3 py-1 rounded-full uppercase">
+                  명예 안전 대원 수료증
+                </span>
+                <h4 className="text-2xl font-black text-slate-800 font-display">황 금 수 료 증</h4>
+              </div>
+
+              <div className="space-y-4">
+                <p className="text-sm font-semibold text-slate-500">
+                  이름: <span className="text-lg font-black text-slate-800 underline underline-offset-4 decoration-yellow-400 decoration-4">{userName || "씩씩한 꼬마"} 대원님</span>
+                </p>
+                <p className="text-xs sm:text-sm text-slate-600 leading-relaxed font-bold px-4">
+                  위 대원님은 스마트 키즈 안전 스쿨에서 진행된 [에스컬레이터 안전선 서기, 손잡이 잡기], [엘리베이터 문틈 주의하기, 비상벨 누르기] 교육 과정을 성실하고 씩씩하게 우등 수료하였으므로 이 증서를 수여합니다.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between pt-4 border-t-2 border-dashed border-yellow-200">
+                <div className="text-left text-[10px] text-slate-500 font-bold space-y-1">
+                  <p>발급일: {new Date().toLocaleDateString("ko-KR")}</p>
+                  <p>기관명: 스마트 키즈 안전 학교</p>
+                </div>
+                <div className="w-16 h-16 rounded-full bg-yellow-400 border-4 border-white shadow-md flex items-center justify-center font-black text-white text-xs rotate-12 select-none">
+                  참 잘했어요
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-2 max-w-xl text-left relative z-10">
+              <h3 className="text-lg sm:text-xl font-black text-amber-950 font-display flex items-center gap-2">
+                <span className="text-2xl animate-bounce-slow">👑</span>
+                명예의 꼬마 지키미 황금 수료증 획득하기!
+              </h3>
+              <p className="text-xs sm:text-sm text-amber-900 leading-relaxed font-semibold">
+                네 개의 에스컬레이터 & 엘리베이터 안전 미션을 모두 씩씩하게 성공해 보세요!<br />
+                스탬프를 다 모으면 우주에서 가장 예쁜 황금 수료증 명예 카드가 여기에 열릴게요! 💖
+              </p>
+            </div>
+
+            <div
+              className={`w-full md:w-auto px-8 py-4 rounded-[1.5rem] font-black transition-all flex items-center justify-center gap-2 shadow-md border-2 bg-slate-200 text-slate-400 border-slate-300 cursor-not-allowed`}
+            >
               <Lock className="w-5 h-5 shrink-0" />
               자물쇠 해제까지 미션 {4 - completedCount}개 더 필요해요!
-            </>
-          )}
-        </button>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Visual Safety Education Tips Section - Pastel Colorful Twin Cards */}

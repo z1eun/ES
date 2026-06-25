@@ -15,7 +15,7 @@ export default function EscalatorGame({ onAddStamp, stamps }: EscalatorGameProps
   const [gameState, setGameState] = useState<"ready" | "playing" | "failed" | "passed">("ready");
   
   // Game countdown metrics
-  const [countdown, setCountdown] = useState<number>(10);
+  const [countdown, setCountdown] = useState<number>(8);
   const [gripProgress, setGripProgress] = useState<number>(0);
   const [gameMessage, setGameMessage] = useState<string>("초록 버튼을 누르면 시작해요! 준비 완료! 💛");
   const [warningActive, setWarningActive] = useState<boolean>(false);
@@ -38,6 +38,11 @@ export default function EscalatorGame({ onAddStamp, stamps }: EscalatorGameProps
   const streamRef = useRef<MediaStream | null>(null);
   const prevFrameData = useRef<ImageData | null>(null);
   const lastGripMotionTime = useRef<number>(0);
+
+  // High performance refs for game-loop separation
+  const isCurrentlyViolatingRef = useRef<boolean>(false);
+  const yellowViolationSecsRef = useRef<number>(0);
+  const isHoldingHandrailRef = useRef<boolean>(false);
 
   // Play adorable kid-friendly synthesised sound effects
   const playSound = (type: "beep" | "success" | "fail" | "happy") => {
@@ -152,11 +157,11 @@ export default function EscalatorGame({ onAddStamp, stamps }: EscalatorGameProps
     if (startTimer === 0) {
       setStartTimer(null);
       setGameState("playing");
-      setCountdown(10);
+      setCountdown(8);
       setGripProgress(0);
       setWarningActive(false);
       if (gameMode === "line") {
-        setGameMessage("안전구역 한가운데에 바르게 똑똑하게 서기 놀이! 10초 동안 버텨요! 🎈");
+        setGameMessage("안전구역 한가운데에 바르게 똑똑하게 서기 놀이! 8초 동안 버텨요! 🎈");
       } else {
         setGameMessage("기차가 움직여요! 오른쪽 핑크/블루 고무 손잡이를 이쁘게 꼭 잡아요!");
       }
@@ -176,57 +181,72 @@ export default function EscalatorGame({ onAddStamp, stamps }: EscalatorGameProps
     if (gameState === "playing") {
       timer = setInterval(() => {
         if (gameMode === "line") {
-          setCountdown((prev) => {
-            if (prev <= 1) {
+          // Determine if there is currently a violation
+          const isViolating = useWebcam ? isCurrentlyViolatingRef.current : !simFeetInCorrectArea;
+          
+          if (isViolating) {
+            yellowViolationSecsRef.current += 1;
+            setWarningActive(true);
+            playSound("beep");
+            
+            if (yellowViolationSecsRef.current >= 2) {
               clearInterval(timer);
-              setGameState("passed");
-              onAddStamp("escalator_line", 100);
-              playSound("success");
-              setGameMessage("와아! 🎉 10초 동안 노란 번개선 안쪽에 이쁘게 서서 타기 성공! 스탬프를 줄게요!");
-              return 0;
-            }
-
-            // Real-time checking (depending on simulator or webcam)
-            if (!useWebcam) {
-              if (!simFeetInCorrectArea) {
-                setGameState("failed");
-                playSound("fail");
-                setGameMessage("앗차차! 노란색 선을 밟아서 삐익! 쿵했어요. 다시 조심히 도전해보아요!");
-                clearInterval(timer);
-              }
-            }
-            return prev - 1;
-          });
-        } else {
-          // Handrail mode (always exactly 10 seconds)
-          setCountdown((prev) => {
-            if (prev <= 1) {
-              clearInterval(timer);
-              setGameState("passed");
-              onAddStamp("escalator_handrail", 100);
-              playSound("success");
-              setGameMessage("참 잘했어요! ✊ 손잡이를 꽉 잡고 안전하게 꼭대기까지 올라갔어요! 스탬프 팡팡!");
-              return 0;
-            }
-
-            const isHolding = useWebcam ? gripProgress > 15 : simHoldingHandrail;
-            if (isHolding) {
-              setGripProgress((p) => Math.min(100, p + 10));
-              setWarningActive(false);
+              setGameState("failed");
+              playSound("fail");
+              setGameMessage("앗차차! 노란색 선을 계속 밟고 서 있어서 삐익! 쿵했어요. 다시 조심히 도전해보아요!");
             } else {
-              setGripProgress((p) => Math.max(0, p - 10));
-              setWarningActive(true);
-              setGameMessage("아이쿠! 🖐️ 얼른 손을 꺼내서 둥근 파란/핑크 손잡이를 꼭 잡아주세요!");
-              playSound("beep");
+              setGameMessage("🚨 앗! 노란선 위에 서 있어요! 얼른 초록색 안쪽으로 서주세요! (2초 뒤 실패)");
             }
-
-            return prev - 1;
-          });
+          } else {
+            yellowViolationSecsRef.current = 0;
+            setWarningActive(false);
+            setGameMessage("안전구역 한가운데에 바르게 똑똑하게 서기 놀이! 8초 동안 버텨요! 🎈");
+            
+            setCountdown((prev) => {
+              if (prev <= 1) {
+                clearInterval(timer);
+                setGameState("passed");
+                onAddStamp("escalator_line", 100);
+                playSound("success");
+                setGameMessage("와아! 🎉 8초 동안 노란 번개선 안쪽에 이쁘게 서서 타기 성공! 스탬프를 줄게요!");
+                return 0;
+              }
+              return prev - 1;
+            });
+          }
+        } else {
+          // Handrail mode (8 seconds)
+          // Determine if holding handrail
+          const isHolding = useWebcam ? isHoldingHandrailRef.current : simHoldingHandrail;
+          
+          if (isHolding) {
+            setWarningActive(false);
+            setGameMessage("좋아요! ✊ 안전 손잡이를 꼭 잡고 있어요! 이대로 유지해요!");
+            
+            setCountdown((prev) => {
+              if (prev <= 1) {
+                clearInterval(timer);
+                setGameState("passed");
+                onAddStamp("escalator_handrail", 100);
+                playSound("success");
+                setGameMessage("참 잘했어요! ✊ 손잡이를 꽉 잡고 안전하게 꼭대기까지 올라갔어요! 스탬프 팡팡!");
+                return 0;
+              }
+              const nextCountdown = prev - 1;
+              setGripProgress(Math.round(((8 - nextCountdown) / 8) * 100));
+              return nextCountdown;
+            });
+          } else {
+            setWarningActive(true);
+            playSound("beep");
+            setGameMessage("아이쿠! 🖐️ 얼른 손을 꺼내서 둥근 파란/핑크 손잡이를 꼭 잡아주세요! (시간 일시정지)");
+            // Do not decrease countdown, it pauses!
+          }
         }
       }, 1000);
     }
     return () => clearInterval(timer);
-  }, [gameState, gameMode, useWebcam, simFeetInCorrectArea, simHoldingHandrail, gripProgress]);
+  }, [gameState, gameMode, useWebcam, simFeetInCorrectArea, simHoldingHandrail]);
 
   // Main Canvas Render & Motion Differencing Loop
   useEffect(() => {
@@ -334,39 +354,14 @@ export default function EscalatorGame({ onAddStamp, stamps }: EscalatorGameProps
             const gripRatio = gripDiff / ((gripArea.w * gripArea.h) / (step * step));
 
             if (gameMode === "line") {
-              if (leftRatio > 0.12 || rightRatio > 0.12) {
-                setWarningActive(true);
-                playSound("beep");
-                setGameState("failed");
-                setGameMessage("아이쿠! 노란 안전선을 건드리셨어요! 두 발을 이쁘게 모으고 얌전히 서 있어 보아요.");
-              } else {
-                setWarningActive(false);
-              }
+              const isViolating = leftRatio > 0.10 || rightRatio > 0.10;
+              isCurrentlyViolatingRef.current = isViolating;
             } else if (gameMode === "handrail") {
-              // Update last grip motion time if some motion is detected (threshold lowered to 0.015)
               if (gripRatio > 0.015) {
                 lastGripMotionTime.current = Date.now();
               }
-
-              // Consider user as actively holding the handrail if they moved in the last 2.5 seconds
               const isHoldingHandrail = (Date.now() - lastGripMotionTime.current < 2500);
-
-              if (isHoldingHandrail) {
-                setGripProgress((prev) => {
-                  if (prev >= 100) {
-                    setGameState("passed");
-                    onAddStamp("escalator_handrail", 100);
-                    playSound("success");
-                    setGameMessage("최고예요! 💖 손잡이를 야무지게 꼭 쥐고 성공 수리에 도달했습니다!");
-                    return 100;
-                  }
-                  return prev + 0.15; // Slow down to take exactly ~10 seconds
-                });
-                setWarningActive(false);
-              } else {
-                setGripProgress((prev) => Math.max(0, prev - 0.2));
-                setWarningActive(true);
-              }
+              isHoldingHandrailRef.current = isHoldingHandrail;
             }
           }
           prevFrameData.current = ctx.getImageData(0, 0, width, height);
@@ -824,9 +819,12 @@ export default function EscalatorGame({ onAddStamp, stamps }: EscalatorGameProps
   const startGame = () => {
     playSound("happy");
     lastGripMotionTime.current = 0;
+    yellowViolationSecsRef.current = 0;
+    isCurrentlyViolatingRef.current = false;
+    isHoldingHandrailRef.current = false;
     setStartTimer(3); // Start with 3-second countdown
     setGameState("ready");
-    setCountdown(10);
+    setCountdown(8);
     setGripProgress(0);
     setWarningActive(false);
     setCharPos({ x: 240, y: 355 }); // Reset to middle
@@ -835,8 +833,11 @@ export default function EscalatorGame({ onAddStamp, stamps }: EscalatorGameProps
   const resetGame = () => {
     setGameState("ready");
     lastGripMotionTime.current = 0;
+    yellowViolationSecsRef.current = 0;
+    isCurrentlyViolatingRef.current = false;
+    isHoldingHandrailRef.current = false;
     setStartTimer(null);
-    setCountdown(10);
+    setCountdown(8);
     setGripProgress(0);
     setWarningActive(false);
     setCharPos({ x: 240, y: 355 }); // Reset to middle
@@ -922,6 +923,14 @@ export default function EscalatorGame({ onAddStamp, stamps }: EscalatorGameProps
               onTouchMove={handleCanvasMove}
               onTouchEnd={handleCanvasUp}
             />
+
+            {/* Prominent Top-Right Timer HUD overlay */}
+            {gameState === "playing" && (
+              <div className="absolute top-4 right-4 z-40 bg-pink-500 border-4 border-white text-white px-5 py-2.5 rounded-2xl flex flex-col items-center justify-center shadow-2xl animate-pulse">
+                <span className="text-[9px] font-black tracking-widest text-pink-100 uppercase">성공 타이머</span>
+                <span className="text-2xl font-black font-mono tracking-tight">{countdown}초</span>
+              </div>
+            )}
 
             {/* Warning Flashing Overlay - Adorable alert */}
             {warningActive && gameState === "playing" && (
@@ -1108,8 +1117,8 @@ export default function EscalatorGame({ onAddStamp, stamps }: EscalatorGameProps
               </p>
               <p className="text-xs text-slate-600 font-semibold leading-relaxed">
                 {gameMode === "line"
-                  ? "에스컬레이터 노란 번개선 바깥에 두 발을 이쁘게 모으고 10초 동안 똑바로 서 있어보세요! 움직이지 않고 버텨야 통과됩니다."
-                  : "에스컬레이터 오른쪽에 있는 손잡이 부분에 손을 딱 대고 게이지를 100%까지 가득 채워보세요!"}
+                  ? "에스컬레이터 노란 번개선 바깥에 두 발을 이쁘게 모으고 8초 동안 똑바로 서 있어보세요! 움직이지 않고 버텨야 통과됩니다."
+                  : "에스컬레이터 오른쪽에 있는 손잡이 부분에 손을 딱 대고 8초 동안 꼭 쥐고 있어보세요!"}
               </p>
             </div>
 

@@ -19,6 +19,7 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
   const [bellStep, setBellStep] = useState<"none" | "alarm" | "ringing" | "connected" | "rescued">("none");
   const [gameMessage, setGameMessage] = useState<string>("초록색 버튼을 눌러서 재밌는 엘리베이터 놀이를 시작해요! 💛");
   const [warningActive, setWarningActive] = useState<boolean>(false);
+  const [warningCount, setWarningCount] = useState<number>(0);
 
   // 3-second pre-game timer
   const [startTimer, setStartTimer] = useState<number | null>(null);
@@ -145,6 +146,25 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
     }
   };
 
+  const speakKorean = (text: string) => {
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = "ko-KR";
+      utterance.rate = 1.05;
+      const voices = window.speechSynthesis.getVoices();
+      const maleVoice = voices.find(
+        (v) => v.lang.includes("ko") && !v.name.toLowerCase().includes("yuna")
+      );
+      if (maleVoice) {
+        utterance.voice = maleVoice;
+      }
+      window.speechSynthesis.speak(utterance);
+    } else {
+      console.warn("Speech Synthesis not supported");
+    }
+  };
+
   // Webcam stream capture toggler
   useEffect(() => {
     if (useWebcam) {
@@ -201,7 +221,7 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
       } else {
         setBellStep("alarm");
         playSound("beep");
-        setGameMessage("어라라! 정전이 되어 불이 꺼졌어요! 🥺 당황하지 말고 옆에 있는 커다란 빨간 비상벨을 꾸욱 5초간 눌러요!");
+        setGameMessage("어라라! 정전이 되어 불이 꺼졌어요! 🥺 당황하지 말고 옆에 있는 커다란 빨간 비상벨을 꾸욱 3초간 눌러요!");
       }
       playSound("happy");
       return;
@@ -213,21 +233,33 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
     return () => clearTimeout(t);
   }, [startTimer, gameMode]);
 
-  // Door closed incremental loop & 5-second Emergency button holder loop
+  // Door closed incremental loop & 3-second Emergency button holder loop
   useEffect(() => {
     let interval: any = null;
     if (gameState === "playing") {
       if (gameMode === "door") {
         setWarningActive(false);
         interval = setInterval(() => {
-          const isObstruction = useWebcam ? warningActive : simLeaningOnDoor;
+          const doorWidth = (640 / 2) * (doorProgress / 100);
+          const isLeaningOrTouchingSim = charPos.y > 380 || charPos.x < doorWidth + 35 || charPos.x > 640 - doorWidth - 35;
+          const isObstruction = useWebcam ? warningActive : isLeaningOrTouchingSim;
 
           if (isObstruction) {
             playSound("beep");
-            setDoorProgress(0);
-            setGameState("failed");
-            setGameMessage("삐비빅! 🛑 문 근처에서 손이나 몸의 움직임이 느껴져서 문이 다시 열렸어요! 안전선 뒤쪽으로 꼬옥 물러서서 가만히 서 있어주세요.");
-            clearInterval(interval);
+            setDoorProgress(0); // Reopen fully
+            
+            setWarningCount((prev) => {
+              const nextCount = prev + 1;
+              if (nextCount >= 3) {
+                clearInterval(interval);
+                setGameState("failed");
+                playSound("fail");
+                setGameMessage("삐비빅! 🛑 문 근처에 다가가거나 손을 대서 3번 경고를 받아 실패했어요. 안전구역 초록색 안쪽에 이쁘게 서 있어 보아요!");
+              } else {
+                setGameMessage(`🚨 아이쿠! 문에 다치지 않게 뒤로 한 걸음 물러나 주세요! 경고 ${nextCount}/3회 (3회 경고 시 실패)`);
+              }
+              return nextCount;
+            });
           } else {
             setDoorProgress((prev) => {
               if (prev >= 100) {
@@ -238,12 +270,12 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
                 setGameMessage("우와! 문이 완전히 닫힐 때까지 이쁘게 뒤쪽에 가만히 서 계셨네요! 정말 씩씩하고 대견해요. 스탬프를 드려요! 💖");
                 return 100;
               }
-              return prev + 5; // 5% per tick, total of ~6 seconds
+              return prev + 13; // takes about 8 seconds to close (13% per step)
             });
           }
-        }, 300);
+        }, 1000);
       } else if (gameMode === "bell") {
-        // Continuous 5-second bell checker (runs every 200ms)
+        // Continuous 3-second bell checker (runs every 200ms)
         interval = setInterval(() => {
           // In alarm phase, verify if they are pressing (either through webcam motion or sim key state)
           if (bellStep === "alarm") {
@@ -251,20 +283,20 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
 
             if (isHolding) {
               setBellHoldProgress((p) => {
-                const next = Math.min(100, p + 4); // +4% every 200ms reaches 100% in exactly 5 seconds!
+                const next = Math.min(100, p + 6.7); // +6.7% every 200ms reaches 100% in exactly 3 seconds!
                 if (next >= 100) {
                   clearInterval(interval);
                   triggerEmergencyBell();
                 }
                 return next;
               });
-              setGameMessage(`🚨 비상벨을 꼬욱 누르고 있어요! 구조대에 신호를 보내는 중... (누른 시간: ${Math.round((bellHoldProgress / 100) * 5)}초 / 5초)`);
-              if (Math.round(bellHoldProgress) % 12 === 0) {
+              setGameMessage(`🚨 비상벨을 꼬욱 누르고 있어요! 구조대에 신호를 보내는 중... (누른 시간: ${Math.round((bellHoldProgress / 100) * 3)}초 / 3초)`);
+              if (Math.round(bellHoldProgress) % 15 === 0) {
                 playSound("beep");
               }
             } else {
-              setBellHoldProgress((p) => Math.max(0, p - 6)); // decay progress if they let go
-              setGameMessage("어라라! 손을 떼면 안 돼요! 빨간 비상벨 버튼을 5초 동안 꾸우욱 누르고 계세요! ✊");
+              setBellHoldProgress((p) => Math.max(0, p - 8)); // decay progress if they let go
+              setGameMessage("어라라! 손을 떼면 안 돼요! 빨간 비상벨 버튼을 3초 동안 꾸우욱 누르고 계세요! ✊");
             }
           } else if (bellStep === "alarm") {
             // siren alarm sound
@@ -274,7 +306,7 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
       }
     }
     return () => clearInterval(interval);
-  }, [gameState, gameMode, bellStep, useWebcam, warningActive, simLeaningOnDoor, bellHoldProgress]);
+  }, [gameState, gameMode, bellStep, useWebcam, warningActive, simLeaningOnDoor, bellHoldProgress, charPos, doorProgress]);
 
   // Canvas rendering loop
   useEffect(() => {
@@ -328,12 +360,15 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
         // Perform real-time motion detection for staying behind the boundary line
         if (gameState === "playing" && gameMode === "door") {
           // Detection region below/in-front-of the safety line (closer to the doors/camera)
-          const frontRegion = { x: 50, y: h - 130, w: w - 100, h: 90 };
+          const frontRegion = { x: 50, y: h - 100, w: w - 100, h: 80 };
           const currentFront = ctx.getImageData(frontRegion.x, frontRegion.y, frontRegion.w, frontRegion.h);
           
-          let motionPixels = 0;
+          let frontMotion = 0;
+          let sideMotion = 0;
+          
           if (prevFrameData.current) {
             const step = 4;
+            // 1. Check front zone (below yellow line)
             for (let cy = 0; cy < frontRegion.h; cy += step) {
               for (let cx = 0; cx < frontRegion.w; cx += step) {
                 const ax = frontRegion.x + cx;
@@ -341,12 +376,40 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
                 const fullIndex = (ay * w + ax) * 4;
                 const cropIndex = (cy * frontRegion.w + cx) * 4;
                 const diff = Math.abs(currentFront.data[cropIndex] - (prevFrameData.current?.data[fullIndex] || 0));
-                if (diff > 45) motionPixels++;
+                if (diff > 45) frontMotion++;
               }
             }
-            const ratio = motionPixels / ((frontRegion.w * frontRegion.h) / (step * step));
-            if (ratio > 0.15) {
-              setWarningActive(true); // Stepped forward / crossing the line
+            
+            // 2. Check side zones (touching the sliding doors area)
+            const leftRegion = { x: 0, y: 100, w: 120, h: h - 200 };
+            const rightRegion = { x: w - 120, y: 100, w: 120, h: h - 200 };
+            
+            const currentLeft = ctx.getImageData(leftRegion.x, leftRegion.y, leftRegion.w, leftRegion.h);
+            const currentRight = ctx.getImageData(rightRegion.x, rightRegion.y, rightRegion.w, rightRegion.h);
+            
+            for (let cy = 0; cy < leftRegion.h; cy += step) {
+              for (let cx = 0; cx < leftRegion.w; cx += step) {
+                const ax = leftRegion.x + cx;
+                const ay = leftRegion.y + cy;
+                const fullIndex = (ay * w + ax) * 4;
+                const cropLeftIndex = (cy * leftRegion.w + cx) * 4;
+                const cropRightIndex = (cy * rightRegion.w + cx) * 4;
+                
+                const diffLeft = Math.abs(currentLeft.data[cropLeftIndex] - (prevFrameData.current?.data[fullIndex] || 0));
+                if (diffLeft > 45) sideMotion++;
+                
+                const fullRightX = rightRegion.x + cx;
+                const fullRightIndex = (ay * w + fullRightX) * 4;
+                const diffRight = Math.abs(currentRight.data[cropRightIndex] - (prevFrameData.current?.data[fullRightIndex] || 0));
+                if (diffRight > 45) sideMotion++;
+              }
+            }
+            
+            const frontRatio = frontMotion / ((frontRegion.w * frontRegion.h) / (step * step));
+            const sideRatio = sideMotion / (((leftRegion.w * leftRegion.h) + (rightRegion.w * rightRegion.h)) / (step * step));
+            
+            if (frontRatio > 0.15 || sideRatio > 0.15) {
+              setWarningActive(true); // Stepped forward or touched sides
             } else {
               setWarningActive(false);
             }
@@ -532,7 +595,7 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
 
       // Safe Standing zone guidelines (Floor Line) - Beautiful structured boundary
       if (doorProgress < 100 && gameState === "playing") {
-        const lineY = h - 130;
+        const lineY = h - 100;
         
         // Draw the neon safety boundary line
         ctx.strokeStyle = warningActive ? "#ef4444" : "#fbbf24";
@@ -604,7 +667,7 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
         ctx.font = "bold 11px sans-serif";
         ctx.fillStyle = "#ffe4e6";
         ctx.fillText("여기에 손을 대고", w / 2, h / 2 + 12);
-        ctx.fillText("5초간 꾸욱 버티기!", w / 2, h / 2 + 28);
+        ctx.fillText("3초간 꾸욱 버티기!", w / 2, h / 2 + 28);
       }
     }
   };
@@ -635,7 +698,7 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
       if (bellStep === "alarm") {
         ctx.fillStyle = blink ? "#ef4444" : "#f59e0b";
         ctx.font = "bold 15px sans-serif";
-        ctx.fillText("🚨 정전 발생! 5초간 비상벨을 누르세요 🚨", w / 2, 45);
+        ctx.fillText("🚨 정전 발생! 3초간 비상벨을 누르세요 🚨", w / 2, 45);
         ctx.font = "11px monospace";
         ctx.fillStyle = "#94a3b8";
         ctx.fillText("STATUS: POWER FAIL / OUT OF SERVICE", w / 2, 68);
@@ -749,7 +812,7 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
       ctx.font = "bold 10px sans-serif";
       ctx.fillStyle = "#fecdd3";
       ctx.fillText("EMERGENCY", bellX, bellY + 14);
-      ctx.fillText("(5초간 누르기)", bellX, bellY + 26);
+      ctx.fillText("(3초간 누르기)", bellX, bellY + 26);
       
       return;
     }
@@ -1004,11 +1067,11 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
       if (isDraggingRef.current) {
         // Constrain dragging bounds
         const newX = Math.max(40, Math.min(canvas.width - 40, canvasX));
-        const newY = Math.max(180, Math.min(canvas.height - 110, canvasY));
+        const newY = Math.max(180, Math.min(canvas.height - 50, canvasY));
         setCharPos({ x: newX, y: newY });
 
-        // If character goes below y = 350 (stepping forward too close to doors/front area), trigger warning!
-        if (newY > 350) {
+        // If character goes below y = 380 (stepping forward too close to doors/front area), trigger warning!
+        if (newY > 380) {
           setSimLeaningOnDoor(true);
           setWarningActive(true);
         } else {
@@ -1033,6 +1096,7 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
     setDoorProgress(0);
     setBellHoldProgress(0);
     setWarningActive(false);
+    setWarningCount(0);
     setStartTimer(3); // Start 3-second pre-game timer
     setGameState("ready");
     setGameMessage("⏰ 3초 타이머 시작! 바르게 대기하고 계세요!");
@@ -1046,6 +1110,7 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
     setBellHoldProgress(0);
     setBellStep("none");
     setWarningActive(false);
+    setWarningCount(0);
     setSimLeaningOnDoor(false);
     setCharPos({ x: 320, y: 370 });
     setGameMessage("초록색 버튼을 눌러서 재밌는 엘리베이터 놀이를 시작해요! 💛");
@@ -1059,18 +1124,49 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
     setBellStep("ringing");
     setGameMessage("따르릉~ ☎️ 비상벨 신호가 씩씩하게 종합 상황 센터로 날아가고 있어요!");
 
+    // 2. Play 119 connection sound (telephone ringing)
     setTimeout(() => {
-      setBellStep("connected");
-      setGameMessage("☎️ 구조대원 삼촌: '안녕! 씩씩한 꼬마 대원님! 걱정 마세요, 비상 전화 연결 성공! 주소를 잘 받았으니 문 뒤에 이쁘게 서 계시면 119 삼촌들이 금방 구하러 갈게요!'");
-      playSound("success");
+      try {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          const ctx = new AudioCtx();
+          // Simulate 2 ringback tones
+          for (let i = 0; i < 2; i++) {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = "sine";
+            osc.frequency.setValueAtTime(440, ctx.currentTime + i * 1.2);
+            osc.frequency.setValueAtTime(480, ctx.currentTime + i * 1.2);
+            gain.gain.setValueAtTime(0.06, ctx.currentTime + i * 1.2);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 1.2 + 0.8);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(ctx.currentTime + i * 1.2);
+            osc.stop(ctx.currentTime + i * 1.2 + 0.9);
+          }
+        }
+      } catch (e) {
+        console.error("119 dial ringing tone error:", e);
+      }
+      setGameMessage("☎️ 119 종합 구조 센터 연결 중... 따르릉, 따르릉!");
 
+      // 3. Connect and play voice speech
       setTimeout(() => {
-        setBellStep("rescued");
-        setGameState("passed");
-        onAddStamp("elevator_bell", 100);
-        setGameMessage("영웅 구출! 🚒 삼촌들이 문을 활짝 열어주었어요! 씩씩하게 비상 대처 완료! 참 잘했어요 스탬프를 드려요!");
-      }, 7000);
-    }, 2500);
+        setBellStep("connected");
+        const voiceText = "꼬마대원님! 걱정마세요. 얌전히 서 계시면 일일구 소방관 삼촌들이 번개처럼 출동해서 문을 열어줄게요!";
+        setGameMessage(`☎️ 119 소방관 삼촌: "꼬마대원님 ! 걱정마세요. 얌전히 서 계시면 119 소방관 삼촌들이 번개처럼 출동해서 문을 열어줄게요!"`);
+        speakKorean(voiceText);
+
+        // 4. Rescue phase
+        setTimeout(() => {
+          setBellStep("rescued");
+          setGameState("passed");
+          onAddStamp("elevator_bell", 100);
+          playSound("success");
+          setGameMessage("영웅 구출! 🚒 삼촌들이 문을 활짝 열어주었어요! 씩씩하게 비상 대처 완료! 참 잘했어요 스탬프를 드려요!");
+        }, 9000); // Give enough time to finish the voice speaking!
+      }, 2500); // 119 ringing duration
+    }, 1500); // Initial alarm to ringing transition
   };
 
   return (
@@ -1172,7 +1268,7 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
                 <div className="bg-rose-600 border-2 border-white text-white px-5 py-3 rounded-2xl flex items-center gap-1.5 shadow-xl animate-bounce">
                   <span className="text-xl">⚠️</span>
                   <span className="font-black text-xs sm:text-sm">
-                    {gameMode === "door" ? "조심해요! 안전선 가까이에 서 있어요!" : "🚨 삐뽀삐뽀! 비상벨을 5초간 꾹 눌러요!"}
+                    {gameMode === "door" ? "조심해요! 안전선 가까이에 서 있어요!" : "🚨 삐뽀삐뽀! 비상벨을 3초간 꾹 눌러요!"}
                   </span>
                 </div>
               </div>
@@ -1378,7 +1474,7 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
                     </span>
                   ) : (
                     <span>
-                      화면 한가운데에 나타난 <strong>빨간색 비상벨 버튼을 마우스나 손가락으로 5초 동안 꾸욱~</strong> 누르고 있어 보세요! 게이지가 꽉 차면서 구조 대원이 호출돼요! ✊
+                      화면 한가운데에 나타난 <strong>빨간색 비상벨 버튼을 마우스나 손가락으로 3초 동안 꾸욱~</strong> 누르고 있어 보세요! 게이지가 꽉 차면서 구조 대원이 호출돼요! ✊
                     </span>
                   )}
                 </p>

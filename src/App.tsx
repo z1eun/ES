@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import HomeDashboard from "./components/HomeDashboard";
 import EscalatorGame from "./components/EscalatorGame";
 import ElevatorGame from "./components/ElevatorGame";
-import SafetyExam from "./components/SafetyExam";
 import SafetyQuiz from "./components/SafetyQuiz";
 import { Stamp, SafetyTaskType } from "./types";
 import { Shield, Home, Compass, DoorOpen, Award, GraduationCap, Sparkles } from "lucide-react";
@@ -12,6 +11,8 @@ export default function App() {
   const [userName, setUserName] = useState<string>(() => {
     return localStorage.getItem("safety_user_name_v1") || "";
   });
+  const [showSuccessPopup, setShowSuccessPopup] = useState<boolean>(false);
+  const [successTaskName, setSuccessTaskName] = useState<string>("");
 
   const [stamps, setStamps] = useState<Stamp[]>(() => {
     const saved = localStorage.getItem("safety_stamps_v1");
@@ -36,6 +37,16 @@ export default function App() {
   }, [userName]);
 
   const handleAddStamp = (taskId: SafetyTaskType, score: number) => {
+    // Determine the task name for the popup
+    let taskName = "";
+    if (taskId === "escalator_line") taskName = "에스컬레이터 노란선 서기 미션";
+    else if (taskId === "escalator_handrail") taskName = "에스컬레이터 손잡이 잡기 미션";
+    else if (taskId === "elevator_door") taskName = "엘리베이터 문틈 주의하기 미션";
+    else if (taskId === "elevator_bell") taskName = "엘리베이터 어둠 속 비상벨 미션";
+    
+    setSuccessTaskName(taskName);
+    setShowSuccessPopup(true);
+
     setStamps((prev) => {
       const updated = prev.map((s) =>
         s.taskId === taskId
@@ -97,8 +108,7 @@ export default function App() {
               { id: "home", label: "홈 & 스탬프북", icon: Home },
               { id: "escalator", label: "에스컬레이터 훈련", icon: Compass },
               { id: "elevator", label: "엘리베이터 훈련", icon: DoorOpen },
-              { id: "quiz", label: "재미있는 퀴즈", icon: Award },
-              { id: "certificate", label: "AI 수료증 시험", icon: GraduationCap }
+              { id: "quiz", label: "재미있는 퀴즈", icon: Award }
             ].map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -158,14 +168,6 @@ export default function App() {
         {activeTab === "quiz" && (
           <SafetyQuiz userName={userName} />
         )}
-
-        {activeTab === "certificate" && (
-          <SafetyExam
-            userName={userName}
-            setUserName={setUserName}
-            stampsCount={completedStampsCount}
-          />
-        )}
       </main>
 
       {/* Footer info & resetting options */}
@@ -195,13 +197,12 @@ export default function App() {
       </footer>
 
       {/* Mobile Sticky Navigation Footer */}
-      <nav className="md:hidden sticky bottom-0 z-50 bg-white border-t border-slate-100 grid grid-cols-5 h-16 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
+      <nav className="md:hidden sticky bottom-0 z-50 bg-white border-t border-slate-100 grid grid-cols-4 h-16 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
         {[
           { id: "home", label: "홈", icon: Home },
           { id: "escalator", label: "에스컬레이터", icon: Compass },
           { id: "elevator", label: "엘리베이터", icon: DoorOpen },
-          { id: "quiz", label: "퀴즈", icon: Award },
-          { id: "certificate", label: "AI 수료증", icon: GraduationCap }
+          { id: "quiz", label: "퀴즈", icon: Award }
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -220,6 +221,45 @@ export default function App() {
           );
         })}
       </nav>
+      {/* Celebratory Congratulatory Victory Popup */}
+      {showSuccessPopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md" id="success-celebration-popup">
+          <div className="relative bg-white rounded-[3rem] p-8 max-w-md w-full border-8 border-yellow-300 text-center shadow-2xl animate-bounce-slow">
+            {/* Playful Floating Decors */}
+            <div className="absolute -top-12 left-1/2 -translate-x-1/2 text-7xl select-none animate-bounce">🏆</div>
+            <div className="absolute top-2 left-4 text-4xl select-none animate-pulse">🎉</div>
+            <div className="absolute top-2 right-4 text-4xl select-none animate-pulse">✨</div>
+            <div className="absolute bottom-4 left-4 text-3xl select-none">🎈</div>
+            <div className="absolute bottom-4 right-4 text-3xl select-none">🧸</div>
+
+            <div className="space-y-6 mt-4">
+              <span className="inline-flex items-center gap-1.5 bg-yellow-100 text-yellow-800 text-xs font-black px-4 py-1.5 rounded-full uppercase tracking-widest animate-pulse">
+                🏅 안전 미션 완전 통과! 🏅
+              </span>
+              
+              <h3 className="text-2xl font-black text-slate-800">
+                와아! 성공했어요! 🎉
+              </h3>
+              
+              <div className="p-4 bg-pink-50 rounded-2xl border-2 border-pink-100 space-y-2">
+                <p className="text-base font-extrabold text-pink-600">
+                  [{successTaskName}]
+                </p>
+                <p className="text-xs font-bold text-slate-600 leading-relaxed">
+                  {userName ? userName : "꼬마"} 대원님! 안전 약속을 너무 잘 지키는 씩씩한 영웅이네요! 멋진 스탬프를 도장북에 쾅 찍어줄게요! ✊
+                </p>
+              </div>
+
+              <button
+                onClick={() => setShowSuccessPopup(false)}
+                className="w-full bg-gradient-to-r from-yellow-400 to-amber-400 hover:from-yellow-300 hover:to-amber-300 text-slate-900 font-black py-3 px-6 rounded-2xl text-sm shadow-lg transition active:scale-95 border-2 border-amber-300 cursor-pointer"
+              >
+                👍 야호! 최고예요! (닫기)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
