@@ -289,7 +289,11 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       if (useWebcam && webcamStatus === "active" && video) {
+        ctx.save();
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        ctx.restore();
 
         const w = canvas.width;
         const h = canvas.height;
@@ -303,12 +307,17 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
           let motionPixels = 0;
           if (prevFrameData.current) {
             const step = 4;
-            const total = frontRegion.w * frontRegion.h;
-            for (let i = 0; i < currentFront.data.length; i += step * 4) {
-              const diff = Math.abs(currentFront.data[i] - (prevFrameData.current?.data[i] || 0));
-              if (diff > 45) motionPixels++;
+            for (let cy = 0; cy < frontRegion.h; cy += step) {
+              for (let cx = 0; cx < frontRegion.w; cx += step) {
+                const ax = frontRegion.x + cx;
+                const ay = frontRegion.y + cy;
+                const fullIndex = (ay * w + ax) * 4;
+                const cropIndex = (cy * frontRegion.w + cx) * 4;
+                const diff = Math.abs(currentFront.data[cropIndex] - (prevFrameData.current?.data[fullIndex] || 0));
+                if (diff > 45) motionPixels++;
+              }
             }
-            const ratio = motionPixels / (total / step);
+            const ratio = motionPixels / ((frontRegion.w * frontRegion.h) / (step * step));
             if (ratio > 0.15) {
               setWarningActive(true); // Stepped forward / crossing the line
             } else {
@@ -320,17 +329,23 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
 
         // Perform hands motion detection over virtual bell button in Trapped Mode
         if (gameState === "playing" && gameMode === "bell" && bellStep === "alarm") {
-          const bellRegion = { x: w / 2 - 70, y: h / 2 - 70, w: 140, h: 140 };
+          const bellRegion = { x: Math.floor(w / 2 - 70), y: Math.floor(h / 2 - 70), w: 140, h: 140 };
           const currentBell = ctx.getImageData(bellRegion.x, bellRegion.y, bellRegion.w, bellRegion.h);
           
           let bellMotion = 0;
           if (prevFrameData.current) {
             const step = 4;
-            for (let i = 0; i < currentBell.data.length; i += step * 4) {
-              const diff = Math.abs(currentBell.data[i] - (prevFrameData.current?.data[i] || 0));
-              if (diff > 50) bellMotion++;
+            for (let cy = 0; cy < bellRegion.h; cy += step) {
+              for (let cx = 0; cx < bellRegion.w; cx += step) {
+                const ax = bellRegion.x + cx;
+                const ay = bellRegion.y + cy;
+                const fullIndex = (ay * w + ax) * 4;
+                const cropIndex = (cy * bellRegion.w + cx) * 4;
+                const diff = Math.abs(currentBell.data[cropIndex] - (prevFrameData.current?.data[fullIndex] || 0));
+                if (diff > 50) bellMotion++;
+              }
             }
-            const ratio = bellMotion / ((bellRegion.w * bellRegion.h) / step);
+            const ratio = bellMotion / ((bellRegion.w * bellRegion.h) / (step * step));
             if (ratio > 0.15) {
               setWarningActive(true); // Hand is on the bell!
             } else {
@@ -973,7 +988,7 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
         
         {/* Interactive Play Canvas Container */}
         <div className="lg:col-span-2 space-y-4">
-          <div className="bg-slate-950 rounded-[2rem] overflow-hidden relative shadow-md border-4 border-slate-800 aspect-video">
+          <div className="bg-slate-950 rounded-[2rem] overflow-hidden relative shadow-md border-4 border-slate-800 aspect-[4/3]">
             
             {useWebcam && (
               <video

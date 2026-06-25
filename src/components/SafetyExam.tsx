@@ -97,7 +97,11 @@ export default function SafetyExam({ userName, setUserName, stampsCount }: Safet
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       if (useWebcam && webcamStatus === "active" && video) {
+        ctx.save();
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        ctx.restore();
 
         drawExamGuidelines(ctx, canvas.width, canvas.height);
       } else {
@@ -465,7 +469,7 @@ export default function SafetyExam({ userName, setUserName, stampsCount }: Safet
           
           {/* Main Camera Frame */}
           <div className="lg:col-span-2 space-y-4">
-            <div className="bg-slate-950 rounded-[2rem] overflow-hidden shadow-md border-4 border-slate-800 aspect-video relative">
+            <div className="bg-slate-950 rounded-[2rem] overflow-hidden shadow-md border-4 border-slate-800 aspect-[4/3] relative">
               
               {useWebcam && (
                 <video
@@ -575,7 +579,7 @@ export default function SafetyExam({ userName, setUserName, stampsCount }: Safet
         </div>
       ) : analyzing ? (
         /* Loading state */
-        <div className="bg-slate-900 text-white rounded-[2rem] p-12 text-center flex flex-col items-center justify-center space-y-6 aspect-video">
+        <div className="bg-slate-900 text-white rounded-[2rem] p-12 text-center flex flex-col items-center justify-center space-y-6 aspect-[4/3]">
           <div className="relative">
             <div className="w-16 h-16 border-4 border-pink-500/30 border-t-pink-400 rounded-full animate-spin" />
             <div className="absolute inset-0 flex items-center justify-center">

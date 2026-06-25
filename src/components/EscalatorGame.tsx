@@ -241,7 +241,11 @@ export default function EscalatorGame({ onAddStamp, stamps }: EscalatorGameProps
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       if (useWebcam && webcamStatus === "active" && video) {
+        ctx.save();
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        ctx.restore();
 
         const width = canvas.width;
         const height = canvas.height;
@@ -260,25 +264,47 @@ export default function EscalatorGame({ onAddStamp, stamps }: EscalatorGameProps
           let gripDiff = 0;
 
           if (prevFrameData.current) {
-            const totalPixels = leftLine.w * leftLine.h;
             const step = 4;
 
-            for (let i = 0; i < currentLeft.data.length; i += step * 4) {
-              const rDiff = Math.abs(currentLeft.data[i] - (prevFrameData.current?.data[i] || 0));
-              if (rDiff > 40) leftDiff++;
-            }
-            for (let i = 0; i < currentRight.data.length; i += step * 4) {
-              const rDiff = Math.abs(currentRight.data[i] - (prevFrameData.current?.data[i] || 0));
-              if (rDiff > 40) rightDiff++;
-            }
-            for (let i = 0; i < currentGrip.data.length; i += step * 4) {
-              const rDiff = Math.abs(currentGrip.data[i] - (prevFrameData.current?.data[i] || 0));
-              if (rDiff > 40) gripDiff++;
+            // Coordinate-mapped motion detection for Left Line
+            for (let cy = 0; cy < leftLine.h; cy += step) {
+              for (let cx = 0; cx < leftLine.w; cx += step) {
+                const ax = leftLine.x + cx;
+                const ay = leftLine.y + cy;
+                const fullIndex = (ay * width + ax) * 4;
+                const cropIndex = (cy * leftLine.w + cx) * 4;
+                const rDiff = Math.abs(currentLeft.data[cropIndex] - (prevFrameData.current?.data[fullIndex] || 0));
+                if (rDiff > 40) leftDiff++;
+              }
             }
 
-            const leftRatio = leftDiff / (totalPixels / step);
-            const rightRatio = rightDiff / (totalPixels / step);
-            const gripRatio = gripDiff / ((gripArea.w * gripArea.h) / step);
+            // Coordinate-mapped motion detection for Right Line
+            for (let cy = 0; cy < rightLine.h; cy += step) {
+              for (let cx = 0; cx < rightLine.w; cx += step) {
+                const ax = rightLine.x + cx;
+                const ay = rightLine.y + cy;
+                const fullIndex = (ay * width + ax) * 4;
+                const cropIndex = (cy * rightLine.w + cx) * 4;
+                const rDiff = Math.abs(currentRight.data[cropIndex] - (prevFrameData.current?.data[fullIndex] || 0));
+                if (rDiff > 40) rightDiff++;
+              }
+            }
+
+            // Coordinate-mapped motion detection for Grip Area
+            for (let cy = 0; cy < gripArea.h; cy += step) {
+              for (let cx = 0; cx < gripArea.w; cx += step) {
+                const ax = gripArea.x + cx;
+                const ay = gripArea.y + cy;
+                const fullIndex = (ay * width + ax) * 4;
+                const cropIndex = (cy * gripArea.w + cx) * 4;
+                const rDiff = Math.abs(currentGrip.data[cropIndex] - (prevFrameData.current?.data[fullIndex] || 0));
+                if (rDiff > 40) gripDiff++;
+              }
+            }
+
+            const leftRatio = leftDiff / ((leftLine.w * leftLine.h) / (step * step));
+            const rightRatio = rightDiff / ((rightLine.w * rightLine.h) / (step * step));
+            const gripRatio = gripDiff / ((gripArea.w * gripArea.h) / (step * step));
 
             if (gameMode === "line") {
               if (leftRatio > 0.12 || rightRatio > 0.12) {
@@ -733,7 +759,7 @@ export default function EscalatorGame({ onAddStamp, stamps }: EscalatorGameProps
         
         {/* Left Interactive Play Area (Video Frame + Canvas) */}
         <div className="lg:col-span-2 space-y-4">
-          <div className="bg-slate-950 rounded-[2rem] overflow-hidden relative shadow-md border-4 border-slate-800 aspect-video">
+          <div className="bg-slate-950 rounded-[2rem] overflow-hidden relative shadow-md border-4 border-slate-800 aspect-[4/3]">
             
             {useWebcam && (
               <video
