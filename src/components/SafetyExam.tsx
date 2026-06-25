@@ -86,7 +86,6 @@ export default function SafetyExam({ userName, setUserName, stampsCount }: Safet
   // Continual local canvas frame update so the user sees a mirror preview
   useEffect(() => {
     const canvas = canvasRef.current;
-    const video = videoRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
@@ -95,6 +94,7 @@ export default function SafetyExam({ userName, setUserName, stampsCount }: Safet
 
     const render = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const video = videoRef.current;
 
       if (useWebcam && webcamStatus === "active" && video) {
         ctx.save();
@@ -476,7 +476,7 @@ export default function SafetyExam({ userName, setUserName, stampsCount }: Safet
                   ref={videoRef}
                   playsInline
                   muted
-                  className="hidden"
+                  className="absolute w-[1px] h-[1px] opacity-0 pointer-events-none"
                   width={640}
                   height={480}
                 />

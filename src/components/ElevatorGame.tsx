@@ -40,6 +40,7 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
   const animationFrameRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const prevFrameData = useRef<ImageData | null>(null);
+  const lastBellMotionTime = useRef<number>(0);
 
   // Sound synthesis with sweet high tones for toddlers
   const playSound = (type: "beep" | "success" | "fail" | "bell" | "alarm" | "door_close" | "happy") => {
@@ -278,15 +279,41 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
   // Canvas rendering loop
   useEffect(() => {
     const canvas = canvasRef.current;
-    const video = videoRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     let frameId: number;
 
+    // Celebratory particle states isolated within the effect
+    interface ConfettiParticle {
+      x: number;
+      y: number;
+      vx: number;
+      vy: number;
+      color: string;
+      size: number;
+      rotation: number;
+      rotationSpeed: number;
+      shape: "circle" | "square" | "star";
+    }
+    interface FireworkSpark {
+      x: number;
+      y: number;
+      vx: number;
+      vy: number;
+      color: string;
+      alpha: number;
+      size: number;
+    }
+
+    let confetti: ConfettiParticle[] = [];
+    let sparks: FireworkSpark[] = [];
+    let fireworkTimer = 0;
+
     const render = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const video = videoRef.current;
 
       if (useWebcam && webcamStatus === "active" && video) {
         ctx.save();
@@ -342,11 +369,20 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
                 const fullIndex = (ay * w + ax) * 4;
                 const cropIndex = (cy * bellRegion.w + cx) * 4;
                 const diff = Math.abs(currentBell.data[cropIndex] - (prevFrameData.current?.data[fullIndex] || 0));
-                if (diff > 50) bellMotion++;
+                if (diff > 30) bellMotion++; // Lowered pixel threshold from 50 to 30 for higher sensitivity
               }
             }
             const ratio = bellMotion / ((bellRegion.w * bellRegion.h) / (step * step));
-            if (ratio > 0.15) {
+            
+            // Refresh motion timestamp if any active motion is seen (threshold lowered to 0.02)
+            if (ratio > 0.02) {
+              lastBellMotionTime.current = Date.now();
+            }
+
+            // Consider user as actively pressing/holding if they moved in the last 2.5 seconds
+            const isHolding = (Date.now() - lastBellMotionTime.current < 2500);
+
+            if (isHolding) {
               setWarningActive(true); // Hand is on the bell!
             } else {
               setWarningActive(false);
@@ -358,6 +394,106 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
         drawWebcamHUD(ctx, w, h);
       } else {
         drawElevatorSimulation(ctx, canvas.width, canvas.height);
+      }
+
+      // 🎇 Sparkly firework and confetti shower for child success feedback
+      if (gameState === "passed") {
+        if (confetti.length === 0) {
+          const colors = ["#ff007f", "#ffea00", "#00f0ff", "#7000ff", "#39ff14", "#ff8000"];
+          const shapes: ("circle" | "square" | "star")[] = ["circle", "square", "star"];
+          for (let i = 0; i < 80; i++) {
+            confetti.push({
+              x: Math.random() * canvas.width,
+              y: Math.random() * -canvas.height - 20,
+              vx: (Math.random() - 0.5) * 5,
+              vy: Math.random() * 4 + 2.5,
+              color: colors[Math.floor(Math.random() * colors.length)],
+              size: Math.random() * 8 + 6,
+              rotation: Math.random() * 360,
+              rotationSpeed: (Math.random() - 0.5) * 8,
+              shape: shapes[Math.floor(Math.random() * shapes.length)]
+            });
+          }
+        }
+
+        // Periodically spawn beautiful fireworks
+        fireworkTimer++;
+        if (fireworkTimer % 40 === 0) {
+          const fx = Math.random() * canvas.width;
+          const fy = Math.random() * (canvas.height * 0.5) + 40;
+          const colors = ["#ff007f", "#ffea00", "#00f0ff", "#7000ff", "#39ff14", "#ff8000"];
+          const color = colors[Math.floor(Math.random() * colors.length)];
+          for (let s = 0; s < 24; s++) {
+            const angle = (s * 360) / 24 + Math.random() * 10;
+            const speed = Math.random() * 3.5 + 1.5;
+            sparks.push({
+              x: fx,
+              y: fy,
+              vx: Math.cos((angle * Math.PI) / 180) * speed,
+              vy: Math.sin((angle * Math.PI) / 180) * speed,
+              color,
+              alpha: 1,
+              size: Math.random() * 3 + 2.5
+            });
+          }
+        }
+
+        // Update & Render confetti
+        confetti.forEach((p) => {
+          p.x += p.vx;
+          p.y += p.vy;
+          p.rotation += p.rotationSpeed;
+          if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
+          if (p.y > canvas.height) {
+            p.y = -20;
+            p.x = Math.random() * canvas.width;
+          }
+
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.rotate((p.rotation * Math.PI) / 180);
+          ctx.fillStyle = p.color;
+          if (p.shape === "circle") {
+            ctx.beginPath();
+            ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2);
+            ctx.fill();
+          } else if (p.shape === "square") {
+            ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+          } else {
+            ctx.beginPath();
+            for (let i = 0; i < 5; i++) {
+              ctx.lineTo(Math.cos(((18 + i * 72) * Math.PI) / 180) * p.size, Math.sin(((18 + i * 72) * Math.PI) / 180) * p.size);
+              ctx.lineTo(Math.cos(((54 + i * 72) * Math.PI) / 180) * (p.size / 2), Math.sin(((54 + i * 72) * Math.PI) / 180) * (p.size / 2));
+            }
+            ctx.closePath();
+            ctx.fill();
+          }
+          ctx.restore();
+        });
+
+        // Update & Render Firework sparks
+        for (let i = sparks.length - 1; i >= 0; i--) {
+          const s = sparks[i];
+          s.x += s.vx;
+          s.y += s.vy;
+          s.vy += 0.04;
+          s.alpha -= 0.015;
+          if (s.alpha <= 0) {
+            sparks.splice(i, 1);
+          } else {
+            ctx.save();
+            ctx.globalAlpha = s.alpha;
+            ctx.fillStyle = s.color;
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+      } else {
+        confetti = [];
+        sparks = [];
+        fireworkTimer = 0;
       }
 
       frameId = requestAnimationFrame(render);
@@ -893,6 +1029,7 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
 
   const startTraining = () => {
     playSound("happy");
+    lastBellMotionTime.current = 0;
     setDoorProgress(0);
     setBellHoldProgress(0);
     setWarningActive(false);
@@ -903,6 +1040,7 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
 
   const resetTraining = () => {
     setGameState("ready");
+    lastBellMotionTime.current = 0;
     setStartTimer(null);
     setDoorProgress(0);
     setBellHoldProgress(0);
@@ -995,7 +1133,7 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
                 ref={videoRef}
                 playsInline
                 muted
-                className="hidden"
+                className="absolute w-[1px] h-[1px] opacity-0 pointer-events-none"
                 width={640}
                 height={480}
               />
@@ -1050,18 +1188,48 @@ export default function ElevatorGame({ onAddStamp, stamps }: ElevatorGameProps) 
 
             {/* Task Completed Adorable Overlay */}
             {gameState === "passed" && (
-              <div className="absolute inset-0 bg-gradient-to-b from-teal-500/90 to-emerald-600/90 flex flex-col items-center justify-center text-white p-6 text-center space-y-4">
-                <div className="bg-yellow-300 text-slate-800 p-4 rounded-full shadow-lg animate-bounce text-4xl">
-                  🏆
-                </div>
-                <h3 className="text-2xl font-black text-yellow-300 font-display">🎉 완벽하게 참 잘했어요! 🎉</h3>
-                <p className="text-xs sm:text-sm max-w-md text-teal-100 font-bold leading-relaxed">
-                  {gameMode === "door"
-                    ? "스르륵 닫히는 문 옆에 손을 대지 않고 의젓하게 기다리는 약속을 지켰어요!"
-                    : "엘리베이터가 고장 나도 울지 않고 비상벨을 눌러 무사히 구출되었어요! 최고의 어린이 영웅 대원!"}
-                </p>
-                <div className="bg-white/20 px-4 py-2 rounded-2xl text-xs text-yellow-200 border-2 border-white/20 font-black">
-                  👑 황금 왕관 안전 스탬프 발송!
+              <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md flex flex-col items-center justify-center p-6 z-30">
+                <div className="bg-white text-slate-800 p-6 rounded-[2.5rem] shadow-2xl max-w-sm w-full border-4 border-teal-300 relative overflow-hidden transform animate-[bounce_0.8s_ease-out]">
+                  {/* Floating Elements */}
+                  <div className="absolute top-2 left-4 text-2xl animate-pulse">✨</div>
+                  <div className="absolute top-4 right-6 text-xl animate-pulse delay-75">🌸</div>
+                  <div className="absolute bottom-6 left-8 text-xl animate-bounce">🎈</div>
+                  <div className="absolute bottom-4 right-8 text-2xl animate-bounce delay-100">👑</div>
+
+                  <div className="flex flex-col items-center space-y-4">
+                    <div className="bg-teal-100 w-20 h-20 rounded-full flex items-center justify-center shadow-lg animate-bounce border-4 border-teal-300">
+                      <span className="text-5xl">🏆</span>
+                    </div>
+
+                    <h3 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-teal-500 via-emerald-600 to-indigo-500 font-display">
+                      🎉 안전 영웅 탄생! 🎉
+                    </h3>
+
+                    <p className="text-sm font-bold text-slate-600 leading-relaxed text-center px-2">
+                      {gameMode === "door"
+                        ? "스르륵 닫히는 문 옆에 손을 대지 않고 의젓하게 기다리는 약속을 완벽하게 지켰어요!"
+                        : "엘리베이터가 고장 나도 울지 않고 씩씩하게 비상벨을 눌러 극적으로 탈출했어요!"}
+                    </p>
+
+                    <div className="bg-teal-50 border-2 border-teal-200 text-teal-600 font-extrabold px-5 py-2 rounded-2xl text-xs flex items-center gap-1.5 animate-pulse">
+                      <span>👑</span> 황금 왕관 안전 스탬프 발급 완료! <span>👑</span>
+                    </div>
+
+                    <div className="flex gap-2 w-full pt-2">
+                      <button
+                        onClick={startTraining}
+                        className="flex-1 bg-yellow-400 hover:bg-yellow-300 text-slate-900 border-2 border-yellow-300 font-black py-3 rounded-2xl text-xs shadow-md transition active:scale-95"
+                      >
+                        한 번 더 하기 🎠
+                      </button>
+                      <button
+                        onClick={resetTraining}
+                        className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 font-black py-3 rounded-2xl text-xs transition active:scale-95"
+                      >
+                        준비방 가기 🚪
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
