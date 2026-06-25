@@ -374,15 +374,19 @@ export default function SafetyExam({ userName, setUserName, stampsCount }: Safet
       return;
     }
 
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      alert("카메라 준비가 아직 안 되었어요. 잠시만 기다려주세요!");
+      return;
+    }
+
+    // Capture snapshot FIRST while everything is fully mounted
+    const base64Image = canvas.toDataURL("image/jpeg", 0.8);
+
     setAnalyzing(true);
     setAnalysisResult(null);
 
     try {
-      const canvas = canvasRef.current;
-      if (!canvas) throw new Error("Canvas element is missing");
-
-      const base64Image = canvas.toDataURL("image/jpeg", 0.8);
-
       const response = await fetch("/api/safety-check", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -463,9 +467,9 @@ export default function SafetyExam({ userName, setUserName, stampsCount }: Safet
         </div>
       </div>
 
-      {analysisResult === null && !analyzing ? (
+      {analysisResult === null ? (
         /* Setup Phase */
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 relative">
           
           {/* Main Camera Frame */}
           <div className="lg:col-span-2 space-y-4">
@@ -540,7 +544,7 @@ export default function SafetyExam({ userName, setUserName, stampsCount }: Safet
                 {[
                   { id: "escalator_line", name: "👣 번개선 안쪽에 서기", desc: "노란선 경계에 발을 대지 않고 얌전하게" },
                   { id: "escalator_handrail", name: "✊ 동글 손잡이 꼭 잡기", desc: "오른손을 쭉 뻗어서 손잡이를 잡아요" },
-                  { id: "elevator_door", name: "🚪 문틈에서 뒤로 물러서기", desc: "안전 지대 안에 가지런히 가만히 서기" },
+                  { id: "elevator_door", name: "🚪 문틈에서 뒤로 물러서기", desc: "안전 지대 안에 가만히 서기" },
                   { id: "elevator_bell", name: "🔔 삐뽀 비상벨 꾹 누르기", desc: "정전이 되면 빨간 종을 누르기" }
                 ].map((task) => (
                   <button
@@ -576,25 +580,26 @@ export default function SafetyExam({ userName, setUserName, stampsCount }: Safet
               </ul>
             </div>
           </div>
-        </div>
-      ) : analyzing ? (
-        /* Loading state */
-        <div className="bg-slate-900 text-white rounded-[2rem] p-12 text-center flex flex-col items-center justify-center space-y-6 aspect-[4/3]">
-          <div className="relative">
-            <div className="w-16 h-16 border-4 border-pink-500/30 border-t-pink-400 rounded-full animate-spin" />
-            <div className="absolute inset-0 flex items-center justify-center">
-              <Sparkles className="w-6 h-6 text-yellow-300 animate-pulse" />
-            </div>
-          </div>
 
-          <div className="space-y-2 max-w-md">
-            <h3 className="text-lg font-black text-pink-300 font-display animate-pulse">
-              Gemini AI 스마트 분석소 작동 중! 🔮
-            </h3>
-            <p className="text-xs text-slate-400 leading-relaxed font-bold">
-              {loadingMessages[loadMsgIdx]}
-            </p>
-          </div>
+          {analyzing && (
+            <div className="absolute inset-0 bg-slate-900/90 backdrop-blur-md text-white rounded-[2rem] p-12 text-center flex flex-col items-center justify-center space-y-6 z-50">
+              <div className="relative">
+                <div className="w-16 h-16 border-4 border-pink-500/30 border-t-pink-400 rounded-full animate-spin" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <Sparkles className="w-6 h-6 text-yellow-300 animate-pulse" />
+                </div>
+              </div>
+
+              <div className="space-y-2 max-w-md">
+                <h3 className="text-lg font-black text-pink-300 font-display animate-pulse">
+                  Gemini AI 스마트 분석소 작동 중! 🔮
+                </h3>
+                <p className="text-xs text-slate-400 leading-relaxed font-bold">
+                  {loadingMessages[loadMsgIdx]}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         /* Results state */
